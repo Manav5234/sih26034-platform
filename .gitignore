@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Frontend
+node_modules/
+/frontend/package-lock.json
+/frontend/.next/
+
+# Docker
+.docker/
+
+# Blender MCP
+*.blend
+
+# Tests
+/tests/__pycache__/
+
+# Phase 5 test images (generated)
+tests/blurry_test.png
