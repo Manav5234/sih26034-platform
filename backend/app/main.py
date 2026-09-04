@@ -16,12 +16,14 @@ from app.db.models import (
     Declaration as DeclDB,
     Evidence as EvDB,
     ComplianceResult as CRDB,
+    Inspection as InspectionDB,
+    AuditLog as AuditLogDB,
     VerificationState,
     ScanStatus,
 )
 from app.database import engine
 from app.storage import storage
-from app.pipeline import run_mocked_pipeline
+from app.pipeline import run_pipeline
 
 from app.schemas.api import (
     AuthLoginRequest,
@@ -40,7 +42,7 @@ from app.schemas.enums import (
 )
 from app.schemas.evidence import Evidence
 from app.schemas.geometry import BBox
-from app.schemas.inspection import Inspection, InspectionAction
+from app.schemas.inspection import Inspection, InspectionAction, InspectionRequest
 from app.schemas.officer import Officer
 from app.schemas.product import CanonicalProduct, Barcode, Dates, MRP, Quantity, UnitSalePrice
 from app.schemas.rule import Rule, RuleSet
@@ -156,8 +158,8 @@ async def create_scan(
             db.flush()
             image_ids.append(img_row.id)
 
-        # Run mocked pipeline
-        iq, declarations, overall = run_mocked_pipeline(scan_id, image_ids)
+        # Run pipeline (OCR + barcode + extraction + rule engine)
+        iq, declarations, overall, barcode_evidence = run_pipeline(scan_id, image_ids, db)
 
         scan.status = ScanStatus.COMPLETED
         scan.overall_status = overall
@@ -166,6 +168,9 @@ async def create_scan(
 
         for decl in declarations:
             db.add(decl)
+
+        for ev in barcode_evidence:
+            db.add(ev)
 
         db.commit()
 
@@ -242,13 +247,14 @@ def get_scan_evidence(scan_id: UUID):
         if not scan:
             raise HTTPException(404, "Scan not found")
 
+        # Declaration-linked evidence
         decls = (
             db.query(DeclDB)
             .options(joinedload(DeclDB.evidence))
             .filter(DeclDB.scan_id == scan_id)
             .all()
         )
-        return [
+        groups = [
             ScanEvidenceGroup(
                 declaration_id=d.id,
                 field_name=d.field_name,
@@ -256,6 +262,27 @@ def get_scan_evidence(scan_id: UUID):
             )
             for d in decls
         ]
+
+        # Barcode/QR evidence (not linked to any declaration)
+        unlinked_evs = (
+            db.query(EvDB)
+            .join(ImageDB, EvDB.image_id == ImageDB.id)
+            .filter(
+                ImageDB.scan_id == scan_id,
+                EvDB.declaration_id.is_(None),
+            )
+            .all()
+        )
+        if unlinked_evs:
+            groups.append(
+                ScanEvidenceGroup(
+                    declaration_id=None,
+                    field_name="barcode_qr",
+                    evidence=[_db_ev_to_schema(e) for e in unlinked_evs],
+                )
+            )
+
+        return groups
 
 
 @app.get("/scan/{scan_id}/compliance", response_model=ScanComplianceResponse)
@@ -290,15 +317,117 @@ def serve_upload(scan_id: str, filename: str):
 
 
 # ---------------------------------------------------------------------------
-# Inspection (still stubs for now)
+# Inspection (officer review workflow)
 # ---------------------------------------------------------------------------
 
 @app.post("/inspection", response_model=Inspection)
-def create_inspection(body: Inspection):
-    return Inspection(
-        id=uuid4(), scan_id=body.scan_id, officer_id=body.officer_id,
-        actions=body.actions, notes=body.notes, created_at=datetime.utcnow(),
-    )
+def create_inspection(
+    body: InspectionRequest,
+    officer: OfficerDB = Depends(get_current_officer),
+):
+    """Officer reviews declarations on a scan and takes actions.
+
+    Actions:
+      - confirm: officer agrees with the AI verdict (no value change)
+      - correct: officer provides a corrected value (stored in officer_correction)
+      - mark_unresolved: officer explicitly marks as unresolved (distinct from AI NOT_VERIFIED)
+
+    Every action creates an audit_log entry.  The original AI extracted_value
+    and evidence are never overwritten — corrections are additive.
+    """
+    with Session(engine) as db:
+        # Validate scan exists
+        scan = db.get(ScanDB, body.scan_id)
+        if not scan:
+            raise HTTPException(404, "Scan not found")
+
+        actions_data = []
+        for action in body.actions:
+            decl = db.get(DeclDB, action.declaration_id)
+            if not decl:
+                raise HTTPException(404, f"Declaration {action.declaration_id} not found")
+            if decl.scan_id != body.scan_id:
+                raise HTTPException(400, f"Declaration {action.declaration_id} does not belong to scan {body.scan_id}")
+
+            old_verdict = decl.verdict.value if hasattr(decl.verdict, "value") else str(decl.verdict)
+
+            if action.action == "confirm":
+                # Record confirmation — no value change
+                pass
+
+            elif action.action == "correct":
+                if action.new_value is None:
+                    raise HTTPException(400, "new_value is required for 'correct' action")
+                # Store correction on the declaration — do NOT overwrite extracted_value
+                correction = {
+                    "officer_id": str(officer.id),
+                    "officer_name": officer.name,
+                    "corrected_value": action.new_value,
+                    "reason": action.reason,
+                    "corrected_at": datetime.utcnow().isoformat(),
+                }
+                decl.officer_correction = correction
+                # Update verdict to reflect officer override
+                decl.verdict = VerificationState.SATISFIED
+                decl.reason = f"officer corrected: {action.reason}"
+
+            elif action.action == "mark_unresolved":
+                decl.verdict = VerificationState.NOT_VERIFIED
+                decl.reason = f"officer marked unresolved: {action.reason}"
+
+            else:
+                raise HTTPException(400, f"Unknown action: {action.action}")
+
+            # Record action data for inspection record
+            action_record = {
+                "declaration_id": str(action.declaration_id),
+                "field_name": decl.field_name,
+                "action": action.action,
+                "old_value": action.old_value,
+                "new_value": action.new_value,
+                "reason": action.reason,
+            }
+            actions_data.append(action_record)
+
+            # Create audit log entry
+            audit = AuditLogDB(
+                id=uuid4(),
+                officer_id=officer.id,
+                action=f"inspection_{action.action}",
+                target_type="declaration",
+                target_id=action.declaration_id,
+                payload={
+                    "scan_id": str(body.scan_id),
+                    "field_name": decl.field_name,
+                    "old_value": action.old_value,
+                    "new_value": action.new_value,
+                    "reason": action.reason,
+                },
+                created_at=datetime.utcnow(),
+            )
+            db.add(audit)
+
+        # Create inspection record
+        inspection = InspectionDB(
+            id=uuid4(),
+            scan_id=body.scan_id,
+            officer_id=officer.id,
+            actions=actions_data,
+            notes=body.notes,
+            created_at=datetime.utcnow(),
+        )
+        db.add(inspection)
+        db.commit()
+        db.refresh(inspection)
+
+        return Inspection(
+            id=inspection.id,
+            scan_id=inspection.scan_id,
+            officer_id=inspection.officer_id,
+            actions=[InspectionAction(**a) for a in inspection.actions],
+            notes=inspection.notes,
+            created_at=inspection.created_at,
+        )
 
 
 @app.get("/inspections", response_model=List[Inspection])
@@ -309,8 +438,30 @@ def list_inspections(
     date_to: Optional[date] = None,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    _officer: OfficerDB = Depends(get_current_officer),
 ):
-    return []
+    with Session(engine) as db:
+        q = db.query(InspectionDB)
+        if officer_id:
+            q = q.filter(InspectionDB.officer_id == officer_id)
+        if scan_id:
+            q = q.filter(InspectionDB.scan_id == scan_id)
+        if date_from:
+            q = q.filter(InspectionDB.created_at >= datetime.combine(date_from, datetime.min.time()))
+        if date_to:
+            q = q.filter(InspectionDB.created_at <= datetime.combine(date_to, datetime.max.time()))
+        rows = q.order_by(InspectionDB.created_at.desc()).offset(offset).limit(limit).all()
+        return [
+            Inspection(
+                id=r.id,
+                scan_id=r.scan_id,
+                officer_id=r.officer_id,
+                actions=[InspectionAction(**a) for a in (r.actions or [])],
+                notes=r.notes,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
 
 
 # ---------------------------------------------------------------------------

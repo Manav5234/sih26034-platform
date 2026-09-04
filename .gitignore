@@ -20,3 +20,18 @@ node_modules/
 
 # Phase 5 test images (generated)
 tests/blurry_test.png
+
+# Debug / ad-hoc scripts
+create_test_img.py
+debug_*.py
+find_*.py
+get_wheels.py
+install_pyclipper.py
+test_extract.py
+*.whl
+
+# Ad-hoc backend test scripts (not real tests)
+backend/test_extract.py
+backend/test_extract_none.py
+backend/test_pipeline.py
+backend/test_pipeline2.py

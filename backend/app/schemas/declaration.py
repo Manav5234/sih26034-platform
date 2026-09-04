@@ -12,6 +12,7 @@ from app.schemas.evidence import Evidence
 
 class OfficerCorrection(BaseModel):
     officer_id: UUID
+    officer_name: Optional[str] = None
     corrected_value: Any
     reason: str
     corrected_at: datetime

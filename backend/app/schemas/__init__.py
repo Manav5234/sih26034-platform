@@ -6,7 +6,7 @@ from app.schemas.product import CanonicalProduct, Quantity, MRP, UnitSalePrice, 
 from app.schemas.scan import Scan, ImageInfo, ImageQuality
 from app.schemas.rule import Rule, RuleSet
 from app.schemas.officer import Officer
-from app.schemas.inspection import Inspection, InspectionAction
+from app.schemas.inspection import Inspection, InspectionAction, InspectionRequest
 
 __all__ = [
     "VerificationState", "EvidenceSourceType", "OfficerRole", "ScanStatus",
@@ -16,5 +16,5 @@ __all__ = [
     "Scan", "ImageInfo", "ImageQuality",
     "Rule", "RuleSet",
     "Officer",
-    "Inspection", "InspectionAction",
+    "Inspection", "InspectionAction", "InspectionRequest",
 ]

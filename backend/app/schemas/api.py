@@ -30,7 +30,7 @@ class ImageUploadResponse(BaseModel):
 
 
 class ScanEvidenceGroup(BaseModel):
-    declaration_id: UUID
+    declaration_id: Optional[UUID] = None
     field_name: str
     evidence: List[Evidence]
 
