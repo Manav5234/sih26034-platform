@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.orm import Session, joinedload
 
-from app.auth import create_access_token, get_current_officer, require_role, verify_password
+from app.auth import create_access_token, get_current_officer, require_role, verify_password, _DUMMY_BCRYPT_HASH
 from app.config import settings
 from app.db.models import (
     Officer as OfficerDB,
@@ -123,7 +123,12 @@ def health_check():
 def login(body: AuthLoginRequest):
     with Session(engine) as db:
         officer = db.query(OfficerDB).filter_by(email=body.email).first()
-        if not officer or not verify_password(body.password, officer.password_hash):
+        # ponytail: always run bcrypt (even for nonexistent emails) to prevent
+        # timing side-channel that reveals which emails are registered.
+        # Cannot use `or` short-circuit — must force verify_password call.
+        password_hash = officer.password_hash if officer else _DUMMY_BCRYPT_HASH
+        password_valid = verify_password(body.password, password_hash)
+        if not officer or not password_valid:
             raise HTTPException(status_code=401, detail="Invalid credentials")
         token = create_access_token(officer.id, officer.role.value)
         return AuthLoginResponse(
