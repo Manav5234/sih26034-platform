@@ -42,6 +42,40 @@ const VERDICT_COLORS: Record<string, string> = {
   CONFLICT: "bg-purple-100 text-purple-800",
 };
 
+const MONTH_NAMES = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatFieldValue(fieldName: string, value: unknown): string {
+  if (value === null || value === undefined) return "\u2014";
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const v = value as Record<string, unknown>;
+    if (fieldName === "mrp" && v.amount !== undefined) {
+      const sym = v.currency === "USD" ? "$" : v.currency === "EUR" ? "\u20ac" : "\u20b9";
+      return `${sym}${v.amount}`;
+    }
+    if (fieldName === "net_quantity" && v.value !== undefined && v.unit) return `${v.value} ${v.unit}`;
+    if (fieldName === "manufacturer" && v.name) return String(v.name);
+    if (fieldName === "manufacture_date" || fieldName === "expiry_date") {
+      const val = (v.value || v) as Record<string, unknown>;
+      if (val && typeof val === "object" && val.year && val.month) {
+        const month = MONTH_NAMES[val.month as number] || "";
+        return val.day ? `${val.day} ${month} ${val.year}` : `${month} ${val.year}`;
+      }
+    }
+    if (fieldName === "cautions") return v.present ? `Present: ${v.text || ""}` : "Not present";
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    if (fieldName === "nutrition_facts") {
+      return value.map((n: Record<string, unknown>) => {
+        const name = String(n.nutrient || "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+        return `${name}: ${n.value != null ? n.value : "\u2014"} ${n.unit || ""}`;
+      }).join("; ");
+    }
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
 export default function ProductDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -116,7 +150,7 @@ export default function ProductDetailPage() {
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    Value: <span className="font-mono text-slate-700">{JSON.stringify(d.extracted_value)}</span>
+                    Value: <span className="font-mono text-slate-700">{formatFieldValue(d.field_name, d.extracted_value)}</span>
                   </p>
                   {d.officer_correction && (
                     <div className="mt-2 rounded border border-blue-200 bg-blue-50 p-2">

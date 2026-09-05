@@ -614,6 +614,11 @@ def run_pipeline(
         caution_verdict = VerificationState.SATISFIED
         caution_extracted = caution_result
         caution_reason = None
+    elif caution_result:
+        # Extracted but present=False — store the dict so UI shows "Not present"
+        caution_verdict = VerificationState.SATISFIED
+        caution_extracted = caution_result
+        caution_reason = None
     else:
         caution_verdict = VerificationState.NOT_VERIFIED
         caution_extracted = None
