@@ -225,6 +225,22 @@ class Inspection(Base):
 
     scan = relationship("Scan", back_populates="inspections")
     officer = relationship("Officer", back_populates="inspections")
+    location = relationship("InspectionLocation", back_populates="inspection", uselist=False)
+
+
+class InspectionLocation(Base):
+    __tablename__ = "inspection_locations"
+
+    id = _uuid_pk()
+    inspection_id = Column(UUID(as_uuid=True), ForeignKey("inspections.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    accuracy_meters = Column(Float, nullable=True)  # null if manual
+    source = Column(String, nullable=False, default="GPS")  # "GPS" | "MANUAL"
+    address_text = Column(Text, nullable=True)
+    captured_at = Column(DateTime(timezone=True), nullable=False)
+
+    inspection = relationship("Inspection", back_populates="location")
 
 
 # ---------------------------------------------------------------------------

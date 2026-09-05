@@ -16,11 +16,29 @@ class InspectionAction(BaseModel):
     reason: str
 
 
+class InspectionLocation(BaseModel):
+    latitude: float
+    longitude: float
+    accuracy_meters: Optional[float] = None
+    source: str  # "GPS" | "MANUAL"
+    address_text: Optional[str] = None
+
+
 class InspectionRequest(BaseModel):
     """Request body for POST /inspection. officer_id comes from JWT, not here."""
     scan_id: UUID
     actions: List[InspectionAction]
     notes: Optional[str] = None
+    location: Optional[InspectionLocation] = None
+
+
+class InspectionLocationOut(BaseModel):
+    latitude: float
+    longitude: float
+    accuracy_meters: Optional[float] = None
+    source: str
+    address_text: Optional[str] = None
+    captured_at: datetime
 
 
 class Inspection(BaseModel):
@@ -29,4 +47,5 @@ class Inspection(BaseModel):
     officer_id: UUID
     actions: List[InspectionAction]
     notes: Optional[str] = None
+    location: Optional[InspectionLocationOut] = None
     created_at: datetime

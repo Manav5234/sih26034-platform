@@ -18,6 +18,7 @@ from app.db.models import (
     Evidence as EvDB,
     ComplianceResult as CRDB,
     Inspection as InspectionDB,
+    InspectionLocation as InspectionLocationDB,
     AuditLog as AuditLogDB,
     VerificationState,
     ScanStatus,
@@ -49,7 +50,7 @@ from app.schemas.enums import (
 )
 from app.schemas.evidence import Evidence
 from app.schemas.geometry import BBox
-from app.schemas.inspection import Inspection, InspectionAction, InspectionRequest
+from app.schemas.inspection import Inspection, InspectionAction, InspectionRequest, InspectionLocationOut
 from app.schemas.officer import Officer
 from app.schemas.product import CanonicalProduct, Barcode, Dates, MRP, Quantity, UnitSalePrice
 from app.schemas.rule import Rule, RuleSet
@@ -527,6 +528,31 @@ def create_inspection(
             created_at=datetime.utcnow(),
         )
         db.add(inspection)
+        db.flush()
+
+        # Save geolocation if provided
+        location_out = None
+        if body.location:
+            loc = InspectionLocationDB(
+                id=uuid4(),
+                inspection_id=inspection.id,
+                latitude=body.location.latitude,
+                longitude=body.location.longitude,
+                accuracy_meters=body.location.accuracy_meters,
+                source=body.location.source,
+                address_text=body.location.address_text,
+                captured_at=datetime.utcnow(),
+            )
+            db.add(loc)
+            location_out = InspectionLocationOut(
+                latitude=loc.latitude,
+                longitude=loc.longitude,
+                accuracy_meters=loc.accuracy_meters,
+                source=loc.source,
+                address_text=loc.address_text,
+                captured_at=loc.captured_at,
+            )
+
         db.commit()
         db.refresh(inspection)
 
@@ -536,6 +562,7 @@ def create_inspection(
             officer_id=inspection.officer_id,
             actions=[InspectionAction(**a) for a in inspection.actions],
             notes=inspection.notes,
+            location=location_out,
             created_at=inspection.created_at,
         )
 
@@ -775,17 +802,92 @@ def get_rules(effective_date: Optional[date] = None):
 
 
 # ---------------------------------------------------------------------------
-# Reports (stubs)
+# Reports
 # ---------------------------------------------------------------------------
 
-@app.post("/reports/{report_id}/pdf")
-def download_report_pdf(report_id: UUID):
-    return StreamingResponse(iter([b"%PDF-1.4 fake"]), media_type="application/pdf")
+@app.get("/reports/{scan_id}")
+def get_report_metadata(scan_id: UUID):
+    """Check if a report exists and return metadata."""
+    from app.db.models import ReportExport as ReportExportDB
+    with Session(engine) as db:
+        scan = db.get(ScanDB, scan_id)
+        if not scan:
+            raise HTTPException(404, "Scan not found")
+        exports = db.query(ReportExportDB).filter(ReportExportDB.scan_id == scan_id).all()
+        return {
+            "scan_id": str(scan_id),
+            "reports": [
+                {
+                    "id": str(e.id),
+                    "format": e.format,
+                    "status": e.status,
+                    "file_path": e.file_path,
+                    "created_at": e.created_at.isoformat() if e.created_at else None,
+                }
+                for e in exports
+            ],
+        }
 
 
-@app.post("/reports/{report_id}/docx")
-def download_report_docx(report_id: UUID):
+@app.post("/reports/{scan_id}/pdf")
+def download_report_pdf(scan_id: UUID, officer: OfficerDB = Depends(get_current_officer)):
+    from app.db.models import ReportExport as ReportExportDB
+    from app.report import assemble_report
+    from app.report_pdf import render_pdf
+
+    with Session(engine) as db:
+        try:
+            report_data = assemble_report(scan_id, db)
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+
+        pdf_bytes = render_pdf(report_data)
+
+        # Store export record
+        export = ReportExportDB(
+            id=uuid4(),
+            scan_id=scan_id,
+            format="pdf",
+            file_path=None,
+            status="completed",
+        )
+        db.add(export)
+        db.commit()
+
     return StreamingResponse(
-        iter([b"PK fake docx"]),
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=report-{scan_id}.pdf"},
+    )
+
+
+@app.post("/reports/{scan_id}/docx")
+def download_report_docx(scan_id: UUID, officer: OfficerDB = Depends(get_current_officer)):
+    from app.db.models import ReportExport as ReportExportDB
+    from app.report import assemble_report
+    from app.report_docx import render_docx
+
+    with Session(engine) as db:
+        try:
+            report_data = assemble_report(scan_id, db)
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+
+        docx_bytes = render_docx(report_data)
+
+        # Store export record
+        export = ReportExportDB(
+            id=uuid4(),
+            scan_id=scan_id,
+            format="docx",
+            file_path=None,
+            status="completed",
+        )
+        db.add(export)
+        db.commit()
+
+    return StreamingResponse(
+        iter([docx_bytes]),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename=report-{scan_id}.docx"},
     )
