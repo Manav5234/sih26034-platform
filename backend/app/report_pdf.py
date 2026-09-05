@@ -1,16 +1,38 @@
 """PDF report renderer using ReportLab."""
 import io
+import os
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 from app.report import ReportData
 
 
 _DASH = "\u2014"
+
+# Bug 4 fix: Register DejaVu Sans (Unicode-capable, ships with the base
+# Debian image) so that ₹ (U+20B9) and other currency glyphs render
+# correctly instead of as missing-glyph boxes.
+_DEJAVU_DIR = "/usr/share/fonts/truetype/dejavu"
+_DEJAVU_NORMAL = os.path.join(_DEJAVU_DIR, "DejaVuSans.ttf")
+_DEJAVU_BOLD = os.path.join(_DEJAVU_DIR, "DejaVuSans-Bold.ttf")
+
+if os.path.exists(_DEJAVU_NORMAL):
+    pdfmetrics.registerFont(TTFont("DejaVuSans", _DEJAVU_NORMAL))
+    pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", _DEJAVU_BOLD))
+    from reportlab.pdfbase.pdfmetrics import registerFontFamily
+    registerFontFamily("DejaVuSans", normal="DejaVuSans", bold="DejaVuSans-Bold")
+    _BASE_FONT = "DejaVuSans"
+    _BASE_FONT_BOLD = "DejaVuSans-Bold"
+else:
+    # Fallback: if DejaVu isn't found (e.g. local dev on Windows), use Helvetica
+    _BASE_FONT = "Helvetica"
+    _BASE_FONT_BOLD = "Helvetica-Bold"
 
 VERDICT_COLORS = {
     "SATISFIED": colors.HexColor("#16a34a"),
@@ -26,10 +48,10 @@ def render_pdf(report: ReportData) -> bytes:
     styles = getSampleStyleSheet()
     story = []
 
-    title_style = ParagraphStyle("Title2", parent=styles["Title"], fontSize=16, spaceAfter=6)
-    heading_style = ParagraphStyle("Heading2", parent=styles["Heading2"], fontSize=13, spaceAfter=4, spaceBefore=10)
-    body_style = ParagraphStyle("Body2", parent=styles["BodyText"], fontSize=9, leading=12)
-    small_style = ParagraphStyle("Small", parent=styles["BodyText"], fontSize=8, leading=10, textColor=colors.grey)
+    title_style = ParagraphStyle("Title2", parent=styles["Title"], fontName=_BASE_FONT_BOLD, fontSize=16, spaceAfter=6)
+    heading_style = ParagraphStyle("Heading2", parent=styles["Heading2"], fontName=_BASE_FONT_BOLD, fontSize=13, spaceAfter=4, spaceBefore=10)
+    body_style = ParagraphStyle("Body2", parent=styles["BodyText"], fontName=_BASE_FONT, fontSize=9, leading=12)
+    small_style = ParagraphStyle("Small", parent=styles["BodyText"], fontName=_BASE_FONT, fontSize=8, leading=10, textColor=colors.grey)
 
     # Title
     story.append(Paragraph("Legal Metrology Compliance Report", title_style))
@@ -121,7 +143,7 @@ def render_pdf(report: ReportData) -> bytes:
                 corrected_display = _format_value(f.field_name, corrected_display)
             story.append(Paragraph(
                 f"    Officer Correction: {oc.get('officer_name', 'Officer')} set to {corrected_display} \u2014 {oc.get('reason', '')}",
-                ParagraphStyle("Correction", parent=body_style, textColor=colors.HexColor("#2563eb"), fontSize=8)
+                ParagraphStyle("Correction", parent=body_style, fontName=_BASE_FONT, textColor=colors.HexColor("#2563eb"), fontSize=8)
             ))
 
         story.append(Spacer(1, 2*mm))
