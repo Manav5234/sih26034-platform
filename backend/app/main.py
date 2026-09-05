@@ -1,4 +1,6 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
+from collections import defaultdict
+import time as _time
 from typing import List, Optional
 from uuid import UUID, uuid4
 
@@ -67,6 +69,33 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
+# Rate limiting (in-memory, login endpoint only)
+# ---------------------------------------------------------------------------
+# ponytail: in-memory dict keyed by client IP.  Adequate for single-worker
+# dev/small deployment.  If horizontal scaling or persistence needed later,
+# swap for Redis or a DB-backed counter.
+
+_LOGIN_RATE_LIMIT = 5       # max attempts per window
+_LOGIN_WINDOW_SECONDS = 900  # 15 minutes
+
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_login_rate_limit(ip: str) -> None:
+    """Raise 429 if IP has exceeded the login rate limit."""
+    now = _time.time()
+    cutoff = now - _LOGIN_WINDOW_SECONDS
+    # Purge old entries
+    _login_attempts[ip] = [t for t in _login_attempts[ip] if t > cutoff]
+    if len(_login_attempts[ip]) >= _LOGIN_RATE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Try again later.",
+        )
+    _login_attempts[ip].append(now)
+
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -120,7 +149,10 @@ def health_check():
 # ---------------------------------------------------------------------------
 
 @app.post("/auth/login", response_model=AuthLoginResponse)
-def login(body: AuthLoginRequest):
+def login(body: AuthLoginRequest, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    _check_login_rate_limit(client_ip)
+
     with Session(engine) as db:
         officer = db.query(OfficerDB).filter_by(email=body.email).first()
         # ponytail: always run bcrypt (even for nonexistent emails) to prevent
