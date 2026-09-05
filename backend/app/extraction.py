@@ -13,9 +13,54 @@ text — the pipeline must use it, never an independent keyword scan.
 
 import logging
 import re
-from typing import List, Dict, Optional, Any
+from datetime import date
+from typing import List, Dict, Optional, Any, Tuple
 
 logger = logging.getLogger(__name__)
+
+# ---------- date extraction aliases ----------
+_MFD_ALIASES = {
+    "mfd", "mfg", "mfr", "mfg date", "mfd date", "manufactured",
+    "manufactured on", "manufacturing date", "batch date", "prod date",
+    "production date", "date of manufacture", "date of manufacturing",
+}
+_EXP_ALIASES = {
+    "exp", "expy", "expiry", "expiry date", "exp date", "best before",
+    "bb", "bb date", "use by", "use by date", "exd", "valid till",
+    "shelf life", "best before date",
+}
+
+# ---------- nutrition patterns ----------
+NUTRIENT_PATTERNS: Dict[str, re.Pattern] = {
+    "energy":         re.compile(r"energy(?:\s*(?:value|content))?[:\s]*(\d+\.?\d*)\s*(kcal|kj|cal)?", re.IGNORECASE),
+    "carbohydrate":   re.compile(r"carbohydrate(?:\s*(?:|total))?[:\s]*(\d+\.?\d*)\s*(g|mg)?", re.IGNORECASE),
+    "sugars":         re.compile(r"(?:total\s+)?sugars?[:\s]*(\d+\.?\d*)\s*(g|mg)?", re.IGNORECASE),
+    "protein":        re.compile(r"protein[:\s]*(\d+\.?\d*)\s*(g|mg)?", re.IGNORECASE),
+    "fat":            re.compile(r"(?:total\s+)?fat(?:\s*(?:content))?[:\s]*(\d+\.?\d*)\s*(g|mg)?", re.IGNORECASE),
+    "saturated_fat":  re.compile(r"saturated\s*(?:fat|fatty\s*acids?)[:\s]*(\d+\.?\d*)\s*(g|mg)?", re.IGNORECASE),
+    "trans_fat":      re.compile(r"trans[\s-]*fat[:\s]*(\d+\.?\d*)\s*(g|mg)?", re.IGNORECASE),
+    "sodium":         re.compile(r"sodium[:\s]*(\d+\.?\d*)\s*(mg|g)?", re.IGNORECASE),
+    "fibre":          re.compile(r"fib(?:re|er)[:\s]*(\d+\.?\d*)\s*(g|mg)?", re.IGNORECASE),
+    "fiber":          re.compile(r"fiber[:\s]*(\d+\.?\d*)\s*(g|mg)?", re.IGNORECASE),
+}
+
+# ---------- caution keywords ----------
+CAUTION_KEYWORDS = re.compile(
+    r"\b(?:caution|warning|note|attention|advisory|safety|important)\b",
+    re.IGNORECASE,
+)
+
+# ---------- date parsing patterns ----------
+_DATE_DMY_PATTERN = re.compile(
+    r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})",  # DD/MM/YYYY or DD-MM-YYYY
+)
+_DATE_MY_PATTERN = re.compile(
+    r"(\d{1,2})[/\-.](\d{2,4})",                    # MM/YYYY or MM-YYYY
+)
+_DATE_MONTH_YEAR_PATTERN = re.compile(
+    r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{2,4})",
+    re.IGNORECASE,
+)
 
 # ---------- known OCR misread aliases for net_quantity ----------
 # These are REAL misreads observed in this project's own test data
@@ -115,6 +160,307 @@ def _find_best_match(
             best = r
 
     return best
+
+
+# ---------------------------------------------------------------------------
+# Date extraction (manufacture / expiry)
+# ---------------------------------------------------------------------------
+
+def _parse_date_value(raw_text: str, aliases: set) -> Optional[Dict[str, Any]]:
+    """Parse a date from OCR text that matches one of the given aliases.
+
+    Returns {"value": {"day": int|None, "month": int, "year": int},
+             "confidence": float, "raw_text": str} or None.
+    """
+    if not raw_text:
+        return None
+
+    text_lower = raw_text.lower()
+    has_alias = any(a in text_lower for a in aliases)
+    if not has_alias:
+        return None
+
+    # Extract OCR confidence from the line (if present in format "conf: XX%")
+    ocr_conf = 0.85  # default if not embedded in text
+    conf_match = re.search(r"conf:\s*(\d+)", raw_text)
+    if conf_match:
+        ocr_conf = int(conf_match.group(1)) / 100.0
+
+    # Try DD/MM/YYYY or DD-MM-YYYY
+    m = _DATE_DMY_PATTERN.search(raw_text)
+    if m:
+        day_s, month_s, year_s = m.group(1), m.group(2), m.group(3)
+        year = int(year_s)
+        if year < 100:
+            year += 2000  # 2-digit → 4-digit: deterministic for packaged goods
+        month = int(month_s)
+        day = int(day_s)
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            # DD/MM assumed (Indian standard) — reduced confidence for format assumption
+            return {
+                "value": {"day": day, "month": month, "year": year},
+                "confidence": round(ocr_conf * 0.8, 4),  # format assumption penalty
+                "raw_text": raw_text,
+            }
+
+    # Try MM/YYYY or MM-YYYY (no day)
+    m = _DATE_MY_PATTERN.search(raw_text)
+    if m:
+        month_s, year_s = m.group(1), m.group(2)
+        year = int(year_s)
+        if year < 100:
+            year += 2000
+        month = int(month_s)
+        if 1 <= month <= 12:
+            return {
+                "value": {"day": None, "month": month, "year": year},
+                "confidence": round(ocr_conf * 0.8, 4),
+                "raw_text": raw_text,
+            }
+
+    # Try "Month YYYY" (e.g. "Dec 2025")
+    m = _DATE_MONTH_YEAR_PATTERN.search(raw_text)
+    if m:
+        month_name = m.group(1)[:3].lower()
+        year_s = m.group(2)
+        year = int(year_s)
+        if year < 100:
+            year += 2000
+        month_map = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+                     "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+        month = month_map.get(month_name)
+        if month:
+            return {
+                "value": {"day": None, "month": month, "year": year},
+                "confidence": round(ocr_conf * 0.85, 4),
+                "raw_text": raw_text,
+            }
+
+    return None
+
+
+def _find_date_source_image(
+    ocr_by_label: Dict[str, List[Dict]],
+    raw_text: str,
+) -> str:
+    """Find which image label contains the given OCR text."""
+    if not raw_text:
+        return "front"
+    for label in ["front", "back"]:
+        for line in ocr_by_label.get(label, []):
+            if line.get("text", "") in raw_text or raw_text in line.get("text", ""):
+                return label
+    return "front"
+
+
+def extract_manufacture_date(
+    results: List[Dict],
+    ocr_by_label: Optional[Dict[str, List[Dict]]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Extract manufacture date from OCR results.
+
+    Searches for keywords (MFD/Mfg Date/Manufactured on/Batch Date) then
+    parses the date value. Returns dict with day/month/year or None.
+    """
+    # Find best matching line
+    best = _find_best_match(results, re.compile(r".+", re.IGNORECASE), "mfg_date",
+                            aliases=_MFD_ALIASES, require_keyword=True)
+    if not best:
+        # Try raw scan of all lines for date patterns near aliases
+        for r in results:
+            text = r["text"]
+            text_lower = text.lower()
+            if any(a in text_lower for a in _MFD_ALIASES):
+                parsed = _parse_date_value(text, _MFD_ALIASES)
+                if parsed:
+                    return parsed
+        return None
+
+    parsed = _parse_date_value(best["text"], _MFD_ALIASES)
+    if not parsed:
+        return None
+
+    # Guardrail: if extracted value is non-None but raw_text doesn't
+    # actually contain a parseable date pattern, force NOT_VERIFIED
+    has_date_pattern = (_DATE_DMY_PATTERN.search(best["text"]) or
+                        _DATE_MY_PATTERN.search(best["text"]) or
+                        _DATE_MONTH_YEAR_PATTERN.search(best["text"]))
+    if not has_date_pattern:
+        logger.warning("MFD guardrail: value extracted but no date pattern in raw_text '%s'", best["text"])
+        return None
+
+    return parsed
+
+
+def extract_expiry_date(
+    results: List[Dict],
+    ocr_by_label: Optional[Dict[str, List[Dict]]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Extract expiry/best-before date from OCR results.
+
+    Searches for keywords (Exp/Expiry/Best Before/Use By/BB/EXD) then
+    parses the date value.
+    """
+    best = _find_best_match(results, re.compile(r".+", re.IGNORECASE), "exp_date",
+                            aliases=_EXP_ALIASES, require_keyword=True)
+    if not best:
+        for r in results:
+            text = r["text"]
+            text_lower = text.lower()
+            if any(a in text_lower for a in _EXP_ALIASES):
+                parsed = _parse_date_value(text, _EXP_ALIASES)
+                if parsed:
+                    return parsed
+        return None
+
+    parsed = _parse_date_value(best["text"], _EXP_ALIASES)
+    if not parsed:
+        return None
+
+    has_date_pattern = (_DATE_DMY_PATTERN.search(best["text"]) or
+                        _DATE_MY_PATTERN.search(best["text"]) or
+                        _DATE_MONTH_YEAR_PATTERN.search(best["text"]))
+    if not has_date_pattern:
+        logger.warning("EXP guardrail: value extracted but no date pattern in raw_text '%s'", best["text"])
+        return None
+
+    return parsed
+
+
+# ---------------------------------------------------------------------------
+# Nutrition facts extraction
+# ---------------------------------------------------------------------------
+
+def extract_nutrition_facts(results: List[Dict]) -> List[Dict[str, Any]]:
+    """Extract per-nutrient values from OCR results.
+
+    Detects a "Nutrition"/"Nutritional" header, then scans subsequent lines
+    for known nutrient patterns. Returns a list of per-nutrient dicts, each
+    with its own confidence. Garbled/unreadable lines get confidence=0.0
+    and value=null — included, NOT omitted.
+
+    Returns list of:
+        {"nutrient": str, "value": float|None, "unit": str, "confidence": float, "raw_text": str}
+    """
+    # Find the nutrition header line
+    header_idx = None
+    for i, r in enumerate(results):
+        text_lower = r["text"].lower()
+        if "nutri" in text_lower:  # matches "nutrition", "nutritional"
+            header_idx = i
+            break
+
+    if header_idx is None:
+        return None
+
+    # Scan lines after the header (up to 20 lines or next section header)
+    nutrients = []
+    seen_nutrients = set()
+    scan_lines = results[header_idx + 1: header_idx + 21]
+
+    for line in scan_lines:
+        text = line["text"]
+        text_lower = text.lower()
+
+        # Stop at section boundary
+        if any(kw in text_lower for kw in ["ingredients", "directions", "storage", "shelf life"]):
+            break
+
+        matched = False
+        for nutrient_name, pattern in NUTRIENT_PATTERNS.items():
+            # Skip fibre alias if fiber already matched (avoid duplicates)
+            if nutrient_name == "fibre" and "fiber" in seen_nutrients:
+                continue
+            if nutrient_name == "fiber" and "fibre" in seen_nutrients:
+                continue
+            if nutrient_name in seen_nutrients:
+                continue
+
+            m = pattern.search(text)
+            if m:
+                try:
+                    value = float(m.group(1))
+                except (ValueError, IndexError):
+                    value = None
+
+                unit = m.group(2) if m.lastindex >= 2 and m.group(2) else _default_unit(nutrient_name)
+
+                conf = line["confidence"]
+                if value is None:
+                    conf = 0.0  # garbled number
+
+                nutrients.append({
+                    "nutrient": nutrient_name,
+                    "value": value,
+                    "unit": unit,
+                    "confidence": round(conf, 4),
+                    "raw_text": text,
+                })
+                seen_nutrients.add(nutrient_name)
+                matched = True
+                break  # one nutrient per line
+
+        # Fallback: line mentions a known nutrient keyword but regex didn't match value
+        if not matched:
+            for nutrient_name in NUTRIENT_PATTERNS:
+                if nutrient_name in seen_nutrients:
+                    continue
+                if nutrient_name in text_lower:
+                    nutrients.append({
+                        "nutrient": nutrient_name,
+                        "value": None,
+                        "unit": _default_unit(nutrient_name),
+                        "confidence": 0.0,
+                        "raw_text": text,
+                    })
+                    seen_nutrients.add(nutrient_name)
+                    break
+
+    return nutrients
+
+
+def _default_unit(nutrient_name: str) -> str:
+    """Return the expected unit for a nutrient if OCR doesn't specify one."""
+    if nutrient_name == "energy":
+        return "kcal"
+    if nutrient_name == "sodium":
+        return "mg"
+    return "g"
+
+
+# ---------------------------------------------------------------------------
+# Cautions extraction (presence-detection)
+# ---------------------------------------------------------------------------
+
+def extract_cautions(results: List[Dict]) -> Dict[str, Any]:
+    """Detect caution/warning presence on the label.
+
+    Returns {"present": bool, "text": str, "confidence": float, "raw_text": str}.
+    """
+    best_conf = 0.0
+    best_text = ""
+
+    for r in results:
+        text = r["text"]
+        if CAUTION_KEYWORDS.search(text):
+            if r["confidence"] > best_conf:
+                best_conf = r["confidence"]
+                best_text = text
+
+    if best_text:
+        return {
+            "present": True,
+            "text": best_text.strip(),
+            "confidence": round(best_conf, 4),
+            "raw_text": best_text,
+        }
+
+    return {
+        "present": False,
+        "text": "",
+        "confidence": 0.95,  # high confidence that no caution keyword exists
+        "raw_text": "",
+    }
 
 
 def extract_mrp(results: List[Dict]) -> Optional[Dict[str, Any]]:

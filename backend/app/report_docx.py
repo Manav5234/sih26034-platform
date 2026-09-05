@@ -4,7 +4,7 @@ from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-from app.report import ReportData, _format_value
+from app.report import ReportData, _format_value, _format_date_value
 
 
 _DASH = "\u2014"
@@ -78,8 +78,32 @@ def render_docx(report: ReportData) -> bytes:
             if color:
                 verdict_run.font.color.rgb = color
 
-        # Value
-        doc.add_paragraph(f"Value: {f.display_value}", style="List Bullet")
+        # Nutrition facts: render as table
+        if f.field_name == "nutrition_facts" and isinstance(f.extracted_value, list):
+            table = doc.add_table(rows=1, cols=4, style="Light Grid Accent 1")
+            table.rows[0].cells[0].text = "Nutrient"
+            table.rows[0].cells[1].text = "Value"
+            table.rows[0].cells[2].text = "Unit"
+            table.rows[0].cells[3].text = "Confidence"
+            for n in f.extracted_value:
+                val = n.get("value")
+                row = table.add_row()
+                row.cells[0].text = n.get("nutrient", "").replace("_", " ").title()
+                row.cells[1].text = f"{val}" if val is not None else "\u2014"
+                row.cells[2].text = n.get("unit", "")
+                row.cells[3].text = f"{n.get('confidence', 0):.0%}"
+        # Date fields: render as readable string
+        elif f.field_name in ("manufacture_date", "expiry_date") and isinstance(f.extracted_value, dict):
+            doc.add_paragraph(f"Value: {_format_date_value(f.extracted_value)}", style="List Bullet")
+        # Cautions: render as quoted text or "Not present"
+        elif f.field_name == "cautions":
+            if f.extracted_value and isinstance(f.extracted_value, dict) and f.extracted_value.get("present"):
+                doc.add_paragraph(f"Value: \"{f.extracted_value.get('text', '')}\"", style="List Bullet")
+            else:
+                doc.add_paragraph("Value: Not present", style="List Bullet")
+        # Default: standard value display
+        else:
+            doc.add_paragraph(f"Value: {f.display_value}", style="List Bullet")
 
         # Reason
         if f.officer_correction and f.ai_reason:

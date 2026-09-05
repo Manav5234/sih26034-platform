@@ -23,6 +23,30 @@ from app.db.models import (
 )
 
 
+_MONTH_NAMES = {
+    1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+    7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+}
+
+
+def _format_date_value(date_val: Any) -> str:
+    """Format a date value dict into human-readable string."""
+    if not isinstance(date_val, dict):
+        return str(date_val) if date_val else "\u2014"
+    val = date_val.get("value", date_val)
+    if not isinstance(val, dict):
+        return str(val) if val else "\u2014"
+    year = val.get("year")
+    month = val.get("month")
+    day = val.get("day")
+    if not year or not month:
+        return "\u2014"
+    month_name = _MONTH_NAMES.get(month, f"{month:02d}")
+    if day:
+        return f"{day} {month_name} {year}"
+    return f"{month_name} {year}"
+
+
 def _format_value(field_name: str, value: Any) -> str:
     """Format extracted_value dict into human-readable string."""
     if value is None:
@@ -37,8 +61,34 @@ def _format_value(field_name: str, value: Any) -> str:
             return f"{value.get('value', '?')} {value.get('unit', '')}"
         if field_name == "manufacturer":
             return value.get("name", str(value))
+        if field_name in ("manufacture_date", "expiry_date"):
+            return _format_date_value(value)
+        if field_name == "cautions":
+            if value.get("present"):
+                return f"Present: {value.get('text', '')}"
+            return "Not present"
+        return str(value)
+    if isinstance(value, list):
+        if field_name == "nutrition_facts":
+            return _format_nutrition_table(value)
         return str(value)
     return str(value)
+
+
+def _format_nutrition_table(nutrients: List[Dict[str, Any]]) -> str:
+    """Format nutrition facts list as a readable table string."""
+    if not nutrients:
+        return "\u2014"
+    lines = []
+    for n in nutrients:
+        val = n.get("value")
+        unit = n.get("unit", "")
+        name = n.get("nutrient", "").replace("_", " ").title()
+        if val is not None:
+            lines.append(f"{name}: {val} {unit}")
+        else:
+            lines.append(f"{name}: \u2014")
+    return "; ".join(lines)
 
 
 @dataclass

@@ -13,6 +13,7 @@ from app.schemas.declaration import Declaration
 class ImageInfo(BaseModel):
     id: UUID
     url: str
+    label: Optional[str] = None
     uploaded_at: datetime
 
 

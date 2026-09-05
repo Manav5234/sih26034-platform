@@ -10,7 +10,7 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-from app.report import ReportData
+from app.report import ReportData, _format_date_value, _format_nutrition_table
 
 
 _DASH = "\u2014"
@@ -110,8 +110,37 @@ def render_pdf(report: ReportData) -> bytes:
                 body_style
             ))
 
-        # Value
-        story.append(Paragraph(f"  Value: {f.display_value}", body_style))
+        # Nutrition facts: render as table
+        if f.field_name == "nutrition_facts" and isinstance(f.extracted_value, list):
+            nutrition_data = [["Nutrient", "Value", "Unit", "Confidence"]]
+            for n in f.extracted_value:
+                val = n.get("value")
+                nutrition_data.append([
+                    n.get("nutrient", "").replace("_", " ").title(),
+                    f"{val}" if val is not None else "\u2014",
+                    n.get("unit", ""),
+                    f"{n.get('confidence', 0):.0%}",
+                ])
+            nt = Table(nutrition_data, colWidths=[100, 60, 40, 70])
+            nt.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            story.append(nt)
+        # Date fields: render as readable string
+        elif f.field_name in ("manufacture_date", "expiry_date") and isinstance(f.extracted_value, dict):
+            story.append(Paragraph(f"  Value: {_format_date_value(f.extracted_value)}", body_style))
+        # Cautions: render as quoted text or "Not present"
+        elif f.field_name == "cautions":
+            if f.extracted_value and isinstance(f.extracted_value, dict) and f.extracted_value.get("present"):
+                story.append(Paragraph(f"  Value: \"{f.extracted_value.get('text', '')}\"", body_style))
+            else:
+                story.append(Paragraph(f"  Value: Not present", body_style))
+        # Default: standard value display
+        else:
+            story.append(Paragraph(f"  Value: {f.display_value}", body_style))
 
         # Reason: show both original AI reason and officer override reason if corrected
         if f.officer_correction and f.ai_reason:

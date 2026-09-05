@@ -104,7 +104,7 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 def _db_image_to_schema(img: ImageDB) -> ImageInfo:
-    return ImageInfo(id=img.id, url=img.url, uploaded_at=img.uploaded_at)
+    return ImageInfo(id=img.id, url=img.url, label=img.label, uploaded_at=img.uploaded_at)
 
 
 def _db_ev_to_schema(ev: EvDB) -> Evidence:

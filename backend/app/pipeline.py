@@ -26,12 +26,17 @@ from app.db.models import (
     Evidence as EvDB,
     ComplianceResult as CRDB,
     Product as ProdDB,
+    NutritionFact as NFDB,
     EvidenceSourceType,
     VerificationState,
 )
 from app.image_quality import ImageQualityAnalyzer
 from app.ocr import run_ocr
-from app.extraction import extract_mrp, extract_net_quantity, extract_manufacturer
+from app.extraction import (
+    extract_mrp, extract_net_quantity, extract_manufacturer,
+    extract_manufacture_date, extract_expiry_date,
+    extract_nutrition_facts, extract_cautions,
+)
 from app.barcode import BarcodeDecoder
 from app.product_lookup import ProductLookupAdapter
 from app.fusion import fuse_field
@@ -45,6 +50,65 @@ def _now():
 
 
 _MIN_CONFIDENCE = 0.6
+
+# Panel-aware search order (Step 4e)
+# Controls which image is searched FIRST. If the field is found on the
+# "wrong" panel, it's still accepted — search order is advisory, not restrictive.
+PANEL_SEARCH_ORDER: Dict[str, List[str]] = {
+    "mrp":             ["front", "back"],
+    "net_quantity":    ["front", "back"],
+    "brand":           ["front", "back"],
+    "manufacturer":    ["back", "front"],
+    "manufacture_date": ["back", "front"],
+    "expiry_date":     ["back", "front"],
+    "nutrition_facts": ["back", "front"],
+    "cautions":        ["back", "front"],
+}
+
+
+def _compare_dates_chronologically(
+    mfd_value: Optional[Dict], exp_value: Optional[Dict]
+) -> Optional[str]:
+    """Compare manufacture vs expiry date at shared granularity.
+
+    Returns "ok", "conflict", or "incomparable" if dates can't be compared.
+    """
+    if not mfd_value or not exp_value:
+        return "incomparable"
+
+    mfd = mfd_value.get("value", {})
+    exp = exp_value.get("value", {})
+
+    # Compare at the finest granularity both dates share
+    mfd_year = mfd.get("year")
+    exp_year = exp.get("year")
+    if mfd_year is None or exp_year is None:
+        return "incomparable"
+
+    if mfd_year != exp_year:
+        return "conflict" if exp_year < mfd_year else "ok"
+
+    mfd_month = mfd.get("month")
+    exp_month = exp.get("month")
+    if mfd_month is None or exp_month is None:
+        return "incomparable"
+
+    if exp_month < mfd_month:
+        return "conflict"
+
+    mfd_day = mfd.get("day")
+    exp_day = exp.get("day")
+    if mfd_day is None or exp_day is None:
+        # Both have same month/year, can't compare day-level — assume ok
+        return "ok"
+
+    if exp_day < mfd_day:
+        return "conflict"
+
+    if exp_day == mfd_day and mfd_month == exp_month and mfd_year == exp_year:
+        return "conflict"  # same day = effectively expired at manufacture
+
+    return "ok"
 
 
 def _needs_recrop(image_quality: dict, mrp: Any, nq: Any, mf: Any) -> bool:
@@ -238,27 +302,29 @@ def run_pipeline(
         if label in ocr_by_label:
             all_ocr_lines.extend(ocr_by_label[label])
 
-    mrk = extract_mrp(all_ocr_lines)
-    nq = extract_net_quantity(all_ocr_lines)
-    mf = extract_manufacturer(all_ocr_lines)
+    # ── Step 3a: Panel-aware extraction ──
+    # Extract fields using panel-aware search order.
+    # Search order is advisory: if found on the "wrong" panel, still accepted.
+    def _extract_with_panel_order(field_name: str, extract_fn, all_lines: List[Dict], ocr_by: Dict[str, List[Dict]]):
+        """Run extraction with panel-aware search order."""
+        order = PANEL_SEARCH_ORDER.get(field_name, ["front", "back"])
+        for label in order:
+            panel_lines = ocr_by.get(label, [])
+            if panel_lines:
+                result = extract_fn(panel_lines)
+                if result is not None:
+                    return result, label
+        # Fallback to merged lines
+        result = extract_fn(all_lines)
+        return result, "front"
 
-    # Determine which image each extraction came from
-    def _find_source_image(extraction_result: Optional[Dict]) -> str:
-        """Find which image label contains this extraction's raw_text."""
-        if not extraction_result:
-            return "front"  # default
-        raw = extraction_result.get("raw_text", "")
-        if not raw:
-            return "front"
-        for label in ["front", "back"]:
-            for line in ocr_by_label.get(label, []):
-                if line.get("text", "") in raw or raw in line.get("text", ""):
-                    return label
-        return "front"
-
-    mrp_source_image = _find_source_image(mrk)
-    nq_source_image = _find_source_image(nq)
-    mf_source_image = _find_source_image(mf)
+    mrk, mrp_source_image = _extract_with_panel_order("mrp", extract_mrp, all_ocr_lines, ocr_by_label)
+    nq, nq_source_image = _extract_with_panel_order("net_quantity", extract_net_quantity, all_ocr_lines, ocr_by_label)
+    mf, mf_source_image = _extract_with_panel_order("manufacturer", extract_manufacturer, all_ocr_lines, ocr_by_label)
+    mfd, mfd_source_image = _extract_with_panel_order("manufacture_date", extract_manufacture_date, all_ocr_lines, ocr_by_label)
+    exp, exp_source_image = _extract_with_panel_order("expiry_date", extract_expiry_date, all_ocr_lines, ocr_by_label)
+    caution_result, caution_source_image = _extract_with_panel_order("cautions", lambda lines: extract_cautions(lines), all_ocr_lines, ocr_by_label)
+    nutrition_list = extract_nutrition_facts(all_ocr_lines)
 
     # ── Step 4: Barcode / QR detection — per image ──
     all_barcodes: List[Dict] = []
@@ -365,6 +431,9 @@ def run_pipeline(
         "mrp": mrp_source_image,
         "net_quantity": nq_source_image,
         "manufacturer": mf_source_image,
+        "manufacture_date": mfd_source_image,
+        "expiry_date": exp_source_image,
+        "cautions": caution_source_image,
     }
 
     field_fusions = [
@@ -440,6 +509,199 @@ def run_pipeline(
         decl.evidence = evidence_entries
         declarations.append(decl)
 
+    # ── Step 6b: OCR-only declarations (manufacture_date, expiry_date, cautions) ──
+    # These don't have provider lookup — pure OCR extraction
+    ocr_only_fields = [
+        ("manufacture_date", "LMR-2024-004", mfd),
+        ("expiry_date", "LMR-2024-005", exp),
+    ]
+
+    for field_name, rule_id, extracted in ocr_only_fields:
+        decl_id = uuid.uuid4()
+        src_label = field_source_images.get(field_name, "front")
+        src_img_id = None
+        for img in images:
+            if img["label"] == src_label:
+                src_img_id = img["id"]
+                break
+        if src_img_id is None and images:
+            src_img_id = images[0]["id"]
+
+        evidence_entries: List[EvDB] = []
+        if extracted:
+            raw = extracted.get("raw_text", "")
+            conf = extracted.get("confidence", 0.0)
+            ev = EvDB(
+                id=uuid.uuid4(),
+                source_type=EvidenceSourceType.OCR,
+                raw_text=raw,
+                confidence=conf,
+                image_id=src_img_id,
+                bbox=None,
+                preprocessing_variant="ocr_single_pass",
+                extracted_at=_now(),
+                declaration_id=decl_id,
+            )
+            evidence_entries.append(ev)
+            extracted_value = extracted
+            verdict = VerificationState.SATISFIED if conf >= _MIN_CONFIDENCE else VerificationState.NOT_VERIFIED
+            reason = None if verdict == VerificationState.SATISFIED else f"insufficient confidence ({conf:.2f} < {_MIN_CONFIDENCE})"
+        else:
+            extracted_value = None
+            verdict = VerificationState.NOT_VERIFIED
+            reason = f"{field_name} not found in any evidence source"
+
+        decl = DeclDB(
+            id=decl_id,
+            scan_id=scan_id,
+            field_name=field_name,
+            extracted_value=extracted_value,
+            rule_id=rule_id,
+            verdict=verdict,
+            reason=reason,
+            confidence=extracted.get("confidence", 0.0) if extracted else 0.0,
+            officer_correction=None,
+        )
+        decl.evidence = evidence_entries
+        declarations.append(decl)
+
+    # ── Step 6c: Chronological cross-check (manufacture vs expiry) ──
+    date_comparison = _compare_dates_chronologically(mfd, exp)
+    if date_comparison == "conflict":
+        # Add a CONFLICT evidence entry linking both date declarations
+        for decl in declarations:
+            if decl.field_name in ("manufacture_date", "expiry_date"):
+                conflict_ev = EvDB(
+                    id=uuid.uuid4(),
+                    source_type=EvidenceSourceType.OCR,
+                    raw_text=f"Chronological conflict: expiry date is before manufacture date",
+                    confidence=1.0,
+                    image_id=None,
+                    bbox=None,
+                    preprocessing_variant="date_cross_check",
+                    extracted_at=_now(),
+                    declaration_id=decl.id,
+                )
+                decl.evidence.append(conflict_ev)
+                decl.verdict = VerificationState.CONFLICT
+                decl.reason = f"expiry date is chronologically before manufacture date"
+
+    # ── Step 6d: Cautions declaration ──
+    caution_decl_id = uuid.uuid4()
+    caution_src_label = field_source_images.get("cautions", "front")
+    caution_src_img_id = None
+    for img in images:
+        if img["label"] == caution_src_label:
+            caution_src_img_id = img["id"]
+            break
+    if caution_src_img_id is None and images:
+        caution_src_img_id = images[0]["id"]
+
+    caution_evidence: List[EvDB] = []
+    if caution_result and caution_result.get("present"):
+        caution_ev = EvDB(
+            id=uuid.uuid4(),
+            source_type=EvidenceSourceType.OCR,
+            raw_text=caution_result.get("raw_text", ""),
+            confidence=caution_result.get("confidence", 0.0),
+            image_id=caution_src_img_id,
+            bbox=None,
+            preprocessing_variant="ocr_single_pass",
+            extracted_at=_now(),
+            declaration_id=caution_decl_id,
+        )
+        caution_evidence.append(caution_ev)
+        caution_verdict = VerificationState.SATISFIED
+        caution_extracted = caution_result
+        caution_reason = None
+    else:
+        caution_verdict = VerificationState.NOT_VERIFIED
+        caution_extracted = None
+        caution_reason = "no caution/warning found on label"
+
+    caution_decl = DeclDB(
+        id=caution_decl_id,
+        scan_id=scan_id,
+        field_name="cautions",
+        extracted_value=caution_extracted,
+        rule_id="LMR-2024-007",
+        verdict=caution_verdict,
+        reason=caution_reason,
+        confidence=caution_result.get("confidence", 0.0) if caution_result else 0.0,
+        officer_correction=None,
+    )
+    caution_decl.evidence = caution_evidence
+    declarations.append(caution_decl)
+
+    # ── Step 6e: Nutrition facts declaration ──
+    nutrition_decl_id = uuid.uuid4()
+    # Find the best source image for nutrition (back-first)
+    nutrition_src_label = "back" if "back" in ocr_by_label else "front"
+    nutrition_src_img_id = None
+    for img in images:
+        if img["label"] == nutrition_src_label:
+            nutrition_src_img_id = img["id"]
+            break
+    if nutrition_src_img_id is None and images:
+        nutrition_src_img_id = images[0]["id"]
+
+    nutrition_evidence: List[EvDB] = []
+    if nutrition_list:
+        # Overall verdict: SATISFIED if any nutrient extracted, NOT_VERIFIED otherwise
+        has_nutrition = any(n.get("value") is not None for n in nutrition_list)
+        avg_conf = sum(n["confidence"] for n in nutrition_list) / len(nutrition_list) if nutrition_list else 0.0
+
+        # Create one evidence entry per nutrient
+        for n in nutrition_list:
+            nf_ev = EvDB(
+                id=uuid.uuid4(),
+                source_type=EvidenceSourceType.OCR,
+                raw_text=n.get("raw_text", ""),
+                confidence=n["confidence"],
+                image_id=nutrition_src_img_id,
+                bbox=None,
+                preprocessing_variant="ocr_single_pass",
+                extracted_at=_now(),
+                declaration_id=nutrition_decl_id,
+            )
+            nutrition_evidence.append(nf_ev)
+
+        nutrition_verdict = VerificationState.SATISFIED if has_nutrition else VerificationState.NOT_VERIFIED
+        nutrition_extracted = nutrition_list
+        nutrition_reason = None if has_nutrition else "no nutrition data found"
+    else:
+        nutrition_verdict = VerificationState.NOT_VERIFIED
+        nutrition_extracted = None
+        nutrition_reason = "no nutrition panel detected"
+        avg_conf = 0.0
+
+    nutrition_decl = DeclDB(
+        id=nutrition_decl_id,
+        scan_id=scan_id,
+        field_name="nutrition_facts",
+        extracted_value=nutrition_extracted,
+        rule_id="LMR-2024-006",
+        verdict=nutrition_verdict,
+        reason=nutrition_reason,
+        confidence=avg_conf,
+        officer_correction=None,
+    )
+    nutrition_decl.evidence = nutrition_evidence
+    declarations.append(nutrition_decl)
+
+    # Persist nutrition facts to NutritionFact table
+    for n in (nutrition_list or []):
+        nf = NFDB(
+            id=uuid.uuid4(),
+            declaration_id=nutrition_decl_id,
+            nutrient=n["nutrient"],
+            value=n.get("value"),
+            unit=n.get("unit", "g"),
+            confidence=n["confidence"],
+            raw_text=n.get("raw_text", ""),
+        )
+        db.add(nf)
+
     # ── Step 7: Rule engine ──
     engine = RuleEngine(db)
     overall, results = engine.evaluate(declarations, inspection_date, product_category)
@@ -452,12 +714,21 @@ def run_pipeline(
             decl.reason = r["reason"]
             decl.confidence = r["confidence"] if r["confidence"] is not None else 0.0
 
+            # For nutrition_facts, store per-nutrient details in compliance_results
+            details = {"reason": r["reason"]}
+            if decl.field_name == "nutrition_facts" and nutrition_list:
+                details["per_nutrient"] = [
+                    {"nutrient": n["nutrient"], "value": n.get("value"),
+                     "unit": n.get("unit"), "confidence": n["confidence"]}
+                    for n in nutrition_list
+                ]
+
             cr = CRDB(
                 id=uuid.uuid4(),
                 declaration_id=decl.id,
                 rule_id=r["rule_id"],
                 status=r["verdict"],
-                details={"reason": r["reason"]},
+                details=details,
             )
             decl.compliance_results = [cr]
 

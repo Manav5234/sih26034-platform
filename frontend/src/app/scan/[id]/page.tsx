@@ -47,6 +47,7 @@ interface Declaration {
 interface ImageInfo {
   id: string;
   url: string;
+  label?: string;
   uploaded_at: string;
 }
 
@@ -59,6 +60,51 @@ interface ScanData {
   overall_status: string | null;
   warnings: string[];
   created_at: string;
+}
+
+function formatDateValue(val: unknown): string {
+  if (!val || typeof val !== "object") return val ? String(val) : "\u2014";
+  const v = (val as Record<string, unknown>).value || val;
+  if (typeof v !== "object" || !v) return String(v);
+  const d = v as Record<string, unknown>;
+  const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const year = d.year;
+  const month = d.month ? monthNames[d.month as number] : null;
+  const day = d.day;
+  if (!year || !month) return "\u2014";
+  return day ? `${day} ${month} ${year}` : `${month} ${year}`;
+}
+
+function formatFieldValue(fieldName: string, value: unknown): string {
+  if (value === null || value === undefined) return "\u2014";
+  if (fieldName === "manufacture_date" || fieldName === "expiry_date") return formatDateValue(value);
+  if (fieldName === "cautions") {
+    if (typeof value === "object" && value !== null && (value as Record<string, unknown>).present) {
+      return `"${(value as Record<string, unknown>).text || ""}"`;
+    }
+    return "Not present";
+  }
+  if (fieldName === "nutrition_facts" && Array.isArray(value)) {
+    return value.map((n: Record<string, unknown>) => {
+      const name = String(n.nutrient || "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      const val = n.value != null ? n.value : "\u2014";
+      return `${name}: ${val} ${n.unit || ""}`;
+    }).join("; ");
+  }
+  if (typeof value === "object") {
+    if ((value as Record<string, unknown>).amount !== undefined) {
+      const v = value as Record<string, unknown>;
+      const sym = v.currency === "USD" ? "$" : v.currency === "EUR" ? "\u20ac" : "\u20b9";
+      return `${sym}${v.amount}`;
+    }
+    if ((value as Record<string, unknown>).value !== undefined && (value as Record<string, unknown>).unit) {
+      const v = value as Record<string, unknown>;
+      return `${v.value} ${v.unit}`;
+    }
+    if ((value as Record<string, unknown>).name) return String((value as Record<string, unknown>).name);
+    return JSON.stringify(value);
+  }
+  return String(value);
 }
 
 const VERDICT_COLORS: Record<string, string> = {
@@ -375,15 +421,20 @@ export default function ScanResultPage() {
                 </div>
                 {scan.images.length > 1 && (
                   <div className="flex gap-2">
-                    {scan.images.map((img) => (
-                      <button
-                        key={img.id}
-                        onClick={() => { setActiveImage(img.url); setImgDimensions(null); }}
-                        className={`rounded border p-1 ${activeImage === img.url ? "border-blue-500" : "border-slate-200"}`}
-                      >
-                        <img src={`${API}${img.url}`} alt="" className="h-12 w-12 rounded object-cover" crossOrigin="anonymous" />
-                      </button>
-                    ))}
+                    {scan.images.map((img, idx) => {
+                      const label = img.label || (idx === 0 ? "front" : "back");
+                      return (
+                        <div key={img.id} className="flex flex-col items-center">
+                          <button
+                            onClick={() => { setActiveImage(img.url); setImgDimensions(null); }}
+                            className={`rounded border p-1 ${activeImage === img.url ? "border-blue-500" : "border-slate-200"}`}
+                          >
+                            <img src={`${API}${img.url}`} alt="" className="h-12 w-12 rounded object-cover" crossOrigin="anonymous" />
+                          </button>
+                          <span className="mt-0.5 text-[10px] font-medium text-slate-500 capitalize">{label}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </>
@@ -405,7 +456,7 @@ export default function ScanResultPage() {
                     </span>
                   </div>
                   <div className="mb-1 text-xs text-slate-500">
-                    Value: <span className="font-mono text-slate-700">{JSON.stringify(decl.extracted_value)}</span>
+                    Value: <span className="font-mono text-slate-700">{formatFieldValue(decl.field_name, decl.extracted_value)}</span>
                   </div>
                   <div className="mb-1 text-xs text-slate-500">
                     Rule: <span className="font-mono text-slate-700">{decl.rule_id || "—"}</span>
@@ -428,12 +479,17 @@ export default function ScanResultPage() {
                   {decl.evidence.length > 0 && (
                     <div className="mt-2 border-t border-slate-100 pt-2">
                       <p className="mb-1 text-xs font-medium text-slate-500">Evidence:</p>
-                      {decl.evidence.map((ev) => (
-                        <div key={ev.id} className="ml-2 text-xs text-slate-400">
-                          [{ev.source_type}] &quot;{ev.raw_text}&quot; (conf: {(ev.confidence * 100).toFixed(0)}%)
-                          {ev.bbox && <span className="ml-1 text-slate-300">@ bbox({ev.bbox.x}, {ev.bbox.y}, {ev.bbox.width}, {ev.bbox.height})</span>}
-                        </div>
-                      ))}
+                      {decl.evidence.map((ev) => {
+                        const sourceImg = scan.images.find(i => i.id === ev.image_id);
+                        const imgLabel = sourceImg?.label || "—";
+                        return (
+                          <div key={ev.id} className="ml-2 text-xs text-slate-400">
+                            [{ev.source_type}] &quot;{ev.raw_text}&quot; (conf: {(ev.confidence * 100).toFixed(0)}%)
+                            <span className="ml-1 text-slate-300">[{imgLabel}]</span>
+                            {ev.bbox && <span className="ml-1 text-slate-300">@ bbox({ev.bbox.x}, {ev.bbox.y}, {ev.bbox.width}, {ev.bbox.height})</span>}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 

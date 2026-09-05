@@ -120,6 +120,17 @@ def _check_date(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
     """Check a date extracted_value."""
     if value is None:
         return "date value is missing"
+    # Accept dict with day/month/year
+    if isinstance(value, dict):
+        val = value.get("value", value)
+        if isinstance(val, dict):
+            year = val.get("year")
+            month = val.get("month")
+            if year is None or month is None:
+                return "date missing year or month"
+            if not (1 <= month <= 12):
+                return f"invalid month {month}"
+            return None
     # Accept string ISO dates
     if isinstance(value, str):
         try:
@@ -129,11 +140,27 @@ def _check_date(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _check_nutrition_panel(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
+    """Check a nutrition_facts extracted_value."""
+    if value is None:
+        return "nutrition panel not found"
+    if not isinstance(value, list):
+        return "nutrition value is not a list"
+    if len(value) == 0:
+        return "nutrition panel is empty"
+    # Check that at least one nutrient has a value
+    has_value = any(n.get("value") is not None for n in value)
+    if not has_value:
+        return "no readable nutrients in panel"
+    return None
+
+
 _FORMAT_CHECKERS = {
     "numeric": _check_numeric,
     "quantity_with_unit": _check_quantity,
     "text": _check_text,
     "date": _check_date,
+    "nutrition_panel": _check_nutrition_panel,
 }
 
 
