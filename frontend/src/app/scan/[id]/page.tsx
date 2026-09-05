@@ -174,6 +174,7 @@ export default function ScanResultPage() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-4 flex items-center gap-3">
           <Link href="/dashboard" className="text-sm text-blue-600 hover:underline">&larr; Dashboard</Link>
+          <Link href="/scans" className="text-sm text-blue-600 hover:underline">Scans</Link>
           <Link href="/scan" className="text-sm text-blue-600 hover:underline">New Scan</Link>
         </div>
 
