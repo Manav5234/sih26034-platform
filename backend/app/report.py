@@ -23,16 +23,37 @@ from app.db.models import (
 )
 
 
+def _format_value(field_name: str, value: Any) -> str:
+    """Format extracted_value dict into human-readable string."""
+    if value is None:
+        return "\u2014"
+    if isinstance(value, dict):
+        if field_name == "mrp":
+            amount = value.get("amount", "?")
+            currency = value.get("currency", "INR")
+            sym = {"INR": "\u20b9", "USD": "$", "EUR": "\u20ac"}.get(currency, currency + " ")
+            return f"{sym}{amount}"
+        if field_name == "net_quantity":
+            return f"{value.get('value', '?')} {value.get('unit', '')}"
+        if field_name == "manufacturer":
+            return value.get("name", str(value))
+        return str(value)
+    return str(value)
+
+
 @dataclass
 class FieldReport:
     field_name: str
     extracted_value: Any
+    display_value: str
     verdict: str
     reason: str
     confidence: float
     rule_id: Optional[str]
     evidence: List[Dict[str, Any]]
     officer_correction: Optional[Dict[str, Any]] = None
+    ai_verdict: Optional[str] = None
+    ai_reason: Optional[str] = None
 
 
 @dataclass
@@ -118,15 +139,25 @@ def assemble_report(scan_id: UUID, db: Session) -> ReportData:
                 "confidence": e.confidence,
             })
 
+        oc = d.officer_correction
+        ai_v = None
+        ai_r = None
+        if oc:
+            ai_v = oc.get("original_verdict")
+            ai_r = oc.get("original_reason")
+
         fields.append(FieldReport(
             field_name=d.field_name,
             extracted_value=d.extracted_value,
+            display_value=_format_value(d.field_name, d.extracted_value),
             verdict=v,
             reason=d.reason or "",
             confidence=d.confidence,
             rule_id=d.rule_id,
             evidence=evidence_list,
-            officer_correction=d.officer_correction,
+            officer_correction=oc,
+            ai_verdict=ai_v,
+            ai_reason=ai_r,
         ))
 
     # Inspections

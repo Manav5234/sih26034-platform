@@ -476,6 +476,8 @@ def create_inspection(
                     "corrected_value": action.new_value,
                     "reason": action.reason,
                     "corrected_at": datetime.utcnow().isoformat(),
+                    "original_verdict": old_verdict,
+                    "original_reason": decl.reason or "",
                 }
                 decl.officer_correction = correction
                 # Update verdict to reflect officer override
@@ -483,6 +485,16 @@ def create_inspection(
                 decl.reason = f"officer corrected: {action.reason}"
 
             elif action.action == "mark_unresolved":
+                correction = {
+                    "officer_id": str(officer.id),
+                    "officer_name": officer.name,
+                    "corrected_value": None,
+                    "reason": action.reason,
+                    "corrected_at": datetime.utcnow().isoformat(),
+                    "original_verdict": old_verdict,
+                    "original_reason": decl.reason or "",
+                }
+                decl.officer_correction = correction
                 decl.verdict = VerificationState.NOT_VERIFIED
                 decl.reason = f"officer marked unresolved: {action.reason}"
 

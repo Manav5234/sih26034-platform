@@ -4,8 +4,10 @@ from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-from app.report import ReportData
+from app.report import ReportData, _format_value
 
+
+_DASH = "\u2014"
 
 VERDICT_COLORS = {
     "SATISFIED": RGBColor(0x16, 0xa3, 0x4a),
@@ -42,7 +44,7 @@ def render_docx(report: ReportData) -> bytes:
         for key, label in [("name", "Name"), ("brand", "Brand"), ("category", "Category"),
                            ("manufacturer", "Manufacturer"), ("barcode", "Barcode"),
                            ("mrp", "MRP"), ("quantity", "Net Quantity")]:
-            val = report.product.get(key) or "—"
+            val = report.product.get(key) or "\u2014"
             row = table.add_row()
             row.cells[0].text = label
             row.cells[1].text = str(val)
@@ -54,17 +56,43 @@ def render_docx(report: ReportData) -> bytes:
         p = doc.add_paragraph()
         run = p.add_run(f"{f.field_name}")
         run.bold = True
-        verdict_run = p.add_run(f" — {f.verdict}")
-        verdict_run.bold = True
-        color = VERDICT_COLORS.get(f.verdict)
-        if color:
-            verdict_run.font.color.rgb = color
 
-        if f.extracted_value is not None:
-            doc.add_paragraph(f"Value: {f.extracted_value}", style="List Bullet")
-        if f.reason:
+        # Show verdict: if officer-corrected, show original AI verdict + officer override
+        if f.officer_correction and f.ai_verdict:
+            ai_run = p.add_run(f" \u2014 AI: {f.ai_verdict}")
+            ai_run.bold = True
+            ai_color = VERDICT_COLORS.get(f.ai_verdict)
+            if ai_color:
+                ai_color = ai_color
+                ai_run.font.color.rgb = ai_color
+            arrow_run = p.add_run(" \u2192 ")
+            officer_run = p.add_run(f"Officer: {f.verdict}")
+            officer_run.bold = True
+            o_color = VERDICT_COLORS.get(f.verdict)
+            if o_color:
+                officer_run.font.color.rgb = o_color
+        else:
+            verdict_run = p.add_run(f" \u2014 {f.verdict}")
+            verdict_run.bold = True
+            color = VERDICT_COLORS.get(f.verdict)
+            if color:
+                verdict_run.font.color.rgb = color
+
+        # Value
+        doc.add_paragraph(f"Value: {f.display_value}", style="List Bullet")
+
+        # Reason
+        if f.officer_correction and f.ai_reason:
+            doc.add_paragraph(f"AI Reason: {f.ai_reason}", style="List Bullet")
+            doc.add_paragraph(f"Officer Note: {f.reason}", style="List Bullet")
+        elif f.reason:
             doc.add_paragraph(f"Reason: {f.reason}", style="List Bullet")
-        doc.add_paragraph(f"Confidence: {f.confidence:.1%} | Rule: {f.rule_id or '—'}", style="List Bullet")
+
+        # Confidence: show "Officer-reviewed" for officer-touched fields
+        if f.officer_correction:
+            doc.add_paragraph(f"Confidence: Officer-reviewed | Rule: {f.rule_id or _DASH}", style="List Bullet")
+        else:
+            doc.add_paragraph(f"Confidence: {f.confidence:.1%} | Rule: {f.rule_id or _DASH}", style="List Bullet")
 
         # Evidence
         for ev in f.evidence:
@@ -76,8 +104,11 @@ def render_docx(report: ReportData) -> bytes:
         # Officer correction
         if f.officer_correction:
             oc = f.officer_correction
+            corrected_display = oc.get("corrected_value", "\u2014")
+            if isinstance(corrected_display, dict):
+                corrected_display = _format_value(f.field_name, corrected_display)
             p = doc.add_paragraph(style="List Bullet 2")
-            run = p.add_run(f"Officer Correction: {oc.get('officer_name', 'Officer')} set to {oc.get('corrected_value')} — {oc.get('reason', '')}")
+            run = p.add_run(f"Officer Correction: {oc.get('officer_name', 'Officer')} set to {corrected_display} \u2014 {oc.get('reason', '')}")
             run.font.color.rgb = RGBColor(0x25, 0x63, 0xeb)
 
     # Inspections
@@ -89,14 +120,14 @@ def render_docx(report: ReportData) -> bytes:
                 loc = insp.location
                 loc_text = f"Location: ({loc.latitude:.6f}, {loc.longitude:.6f})"
                 if loc.accuracy_meters:
-                    loc_text += f" ±{loc.accuracy_meters:.0f}m"
+                    loc_text += f" \u00b1{loc.accuracy_meters:.0f}m"
                 loc_text += f" [source: {loc.source}]"
                 if loc.address_text:
-                    loc_text += f" — {loc.address_text}"
+                    loc_text += f" \u2014 {loc.address_text}"
                 doc.add_paragraph(loc_text, style="List Bullet")
             for a in insp.actions:
                 doc.add_paragraph(
-                    f"{a.get('action', '')}: {a.get('field_name', '')} — {a.get('reason', '')}",
+                    f"{a.get('action', '')}: {a.get('field_name', '')} \u2014 {a.get('reason', '')}",
                     style="List Bullet"
                 )
             doc.add_paragraph("")

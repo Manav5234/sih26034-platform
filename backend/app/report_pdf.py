@@ -10,6 +10,8 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from app.report import ReportData
 
 
+_DASH = "\u2014"
+
 VERDICT_COLORS = {
     "SATISFIED": colors.HexColor("#16a34a"),
     "VIOLATION": colors.HexColor("#dc2626"),
@@ -46,13 +48,13 @@ def render_pdf(report: ReportData) -> bytes:
         p = report.product
         product_data = [
             ["Field", "Value"],
-            ["Name", p.get("name") or "—"],
-            ["Brand", p.get("brand") or "—"],
-            ["Category", p.get("category") or "—"],
-            ["Manufacturer", p.get("manufacturer") or "—"],
-            ["Barcode", p.get("barcode") or "—"],
-            ["MRP", p.get("mrp") or "—"],
-            ["Net Quantity", p.get("quantity") or "—"],
+            ["Name", p.get("name") or "\u2014"],
+            ["Brand", p.get("brand") or "\u2014"],
+            ["Category", p.get("category") or "\u2014"],
+            ["Manufacturer", p.get("manufacturer") or "\u2014"],
+            ["Barcode", p.get("barcode") or "\u2014"],
+            ["MRP", p.get("mrp") or "\u2014"],
+            ["Net Quantity", p.get("quantity") or "\u2014"],
         ]
         t = Table(product_data, colWidths=[100, 350])
         t.setStyle(TableStyle([
@@ -70,15 +72,37 @@ def render_pdf(report: ReportData) -> bytes:
     story.append(Paragraph("Extracted Declarations", heading_style))
     for f in report.fields:
         vcolor = VERDICT_COLORS.get(f.verdict, colors.black)
-        story.append(Paragraph(
-            f"<b>{f.field_name}</b> — <font color='{vcolor}'>{f.verdict}</font>",
-            body_style
-        ))
-        if f.extracted_value is not None:
-            story.append(Paragraph(f"  Value: {f.extracted_value}", body_style))
-        if f.reason:
+
+        # Show verdict: if officer-corrected, show original AI verdict + officer override
+        if f.officer_correction and f.ai_verdict:
+            ai_vcolor = VERDICT_COLORS.get(f.ai_verdict, colors.black)
+            story.append(Paragraph(
+                f"<b>{f.field_name}</b> \u2014 "
+                f"<font color='{ai_vcolor}'>AI: {f.ai_verdict}</font> \u2192 "
+                f"<font color='{vcolor}'>Officer: {f.verdict}</font>",
+                body_style
+            ))
+        else:
+            story.append(Paragraph(
+                f"<b>{f.field_name}</b> \u2014 <font color='{vcolor}'>{f.verdict}</font>",
+                body_style
+            ))
+
+        # Value
+        story.append(Paragraph(f"  Value: {f.display_value}", body_style))
+
+        # Reason: show both original AI reason and officer override reason if corrected
+        if f.officer_correction and f.ai_reason:
+            story.append(Paragraph(f"  AI Reason: {f.ai_reason}", small_style))
+            story.append(Paragraph(f"  Officer Note: {f.reason}", small_style))
+        elif f.reason:
             story.append(Paragraph(f"  Reason: {f.reason}", body_style))
-        story.append(Paragraph(f"  Confidence: {f.confidence:.1%} | Rule: {f.rule_id or '—'}", small_style))
+
+        # Confidence: show "Officer-reviewed" for officer-touched fields, percentage otherwise
+        if f.officer_correction:
+            story.append(Paragraph(f"  Confidence: Officer-reviewed | Rule: {f.rule_id or _DASH}", small_style))
+        else:
+            story.append(Paragraph(f"  Confidence: {f.confidence:.1%} | Rule: {f.rule_id or _DASH}", small_style))
 
         # Evidence
         if f.evidence:
@@ -91,8 +115,12 @@ def render_pdf(report: ReportData) -> bytes:
         # Officer correction
         if f.officer_correction:
             oc = f.officer_correction
+            corrected_display = oc.get("corrected_value", "\u2014")
+            if isinstance(corrected_display, dict):
+                from app.report import _format_value
+                corrected_display = _format_value(f.field_name, corrected_display)
             story.append(Paragraph(
-                f"    Officer Correction: {oc.get('officer_name', 'Officer')} set to {oc.get('corrected_value')} — {oc.get('reason', '')}",
+                f"    Officer Correction: {oc.get('officer_name', 'Officer')} set to {corrected_display} \u2014 {oc.get('reason', '')}",
                 ParagraphStyle("Correction", parent=body_style, textColor=colors.HexColor("#2563eb"), fontSize=8)
             ))
 
@@ -107,14 +135,14 @@ def render_pdf(report: ReportData) -> bytes:
                 loc = insp.location
                 loc_text = f"Location: ({loc.latitude:.6f}, {loc.longitude:.6f})"
                 if loc.accuracy_meters:
-                    loc_text += f" ±{loc.accuracy_meters:.0f}m"
+                    loc_text += f" \u00b1{loc.accuracy_meters:.0f}m"
                 loc_text += f" [source: {loc.source}]"
                 if loc.address_text:
-                    loc_text += f" — {loc.address_text}"
+                    loc_text += f" \u2014 {loc.address_text}"
                 story.append(Paragraph(loc_text, small_style))
             for a in insp.actions:
                 story.append(Paragraph(
-                    f"  {a.get('action', '')}: {a.get('field_name', '')} — {a.get('reason', '')}",
+                    f"  {a.get('action', '')}: {a.get('field_name', '')} \u2014 {a.get('reason', '')}",
                     small_style
                 ))
             story.append(Spacer(1, 3*mm))
