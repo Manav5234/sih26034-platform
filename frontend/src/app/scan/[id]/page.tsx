@@ -85,6 +85,13 @@ export default function ScanResultPage() {
   const [correctValue, setCorrectValue] = useState("");
   const [correctReason, setCorrectReason] = useState("");
 
+  // Geolocation state
+  const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy_meters?: number; source: string; address_text?: string } | null>(null);
+  const [locationStatus, setLocationStatus] = useState<"idle" | "capturing" | "manual">("idle");
+  const [manualLat, setManualLat] = useState("");
+  const [manualLng, setManualLng] = useState("");
+  const [manualAddress, setManualAddress] = useState("");
+
   async function load() {
     try {
       const tokenRes = await fetch("/api/auth/token");
@@ -105,19 +112,61 @@ export default function ScanResultPage() {
 
   useEffect(() => { load(); }, [id]);
 
+  function captureGPS() {
+    if (!navigator.geolocation) {
+      setLocationStatus("manual");
+      return;
+    }
+    setLocationStatus("capturing");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy_meters: pos.coords.accuracy,
+          source: "GPS",
+        });
+        setLocationStatus("idle");
+      },
+      () => {
+        setLocationStatus("manual");
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  function submitManualLocation() {
+    const lat = parseFloat(manualLat);
+    const lng = parseFloat(manualLng);
+    if (isNaN(lat) || isNaN(lng)) {
+      alert("Enter valid coordinates");
+      return;
+    }
+    setLocation({
+      latitude: lat,
+      longitude: lng,
+      source: "MANUAL",
+      address_text: manualAddress || undefined,
+    });
+    setLocationStatus("idle");
+  }
+
   async function submitReview(actions: Array<{ declaration_id: string; action: string; old_value: unknown; new_value?: unknown; reason: string }>) {
     setReviewing(true);
     try {
       const tokenRes = await fetch("/api/auth/token");
       const { token } = await tokenRes.json();
+      const body: Record<string, unknown> = { scan_id: id, actions };
+      if (location) body.location = location;
       await fetch(`${API}/inspection`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ scan_id: id, actions }),
+        body: JSON.stringify(body),
       });
       // Reload scan to show updated declarations
       await load();
       setReviewMode(false);
+      setLocation(null);
     } catch {
       alert("Failed to submit review");
     } finally {
@@ -183,12 +232,46 @@ export default function ScanResultPage() {
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${verdictColor(scan.overall_status || "NOT_VERIFIED")}`}>
             {scan.overall_status || "NOT_VERIFIED"}
           </span>
-          <button
-            onClick={() => setReviewMode(!reviewMode)}
-            className={`ml-auto rounded-lg px-3 py-1.5 text-xs font-medium transition ${reviewMode ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-blue-600 text-white hover:bg-blue-700"}`}
-          >
-            {reviewMode ? "Exit Review" : "Review"}
-          </button>
+          <div className="ml-auto flex gap-2">
+            <button
+              onClick={async () => {
+                const tokenRes = await fetch("/api/auth/token");
+                const { token } = await tokenRes.json();
+                const r = await fetch(`${API}/reports/${id}/pdf`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+                if (r.ok) {
+                  const blob = await r.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a"); a.href = url; a.download = `report-${id}.pdf`; a.click();
+                  URL.revokeObjectURL(url);
+                }
+              }}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
+            >
+              PDF
+            </button>
+            <button
+              onClick={async () => {
+                const tokenRes = await fetch("/api/auth/token");
+                const { token } = await tokenRes.json();
+                const r = await fetch(`${API}/reports/${id}/docx`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+                if (r.ok) {
+                  const blob = await r.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a"); a.href = url; a.download = `report-${id}.docx`; a.click();
+                  URL.revokeObjectURL(url);
+                }
+              }}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
+            >
+              DOCX
+            </button>
+            <button
+              onClick={() => setReviewMode(!reviewMode)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${reviewMode ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-blue-600 text-white hover:bg-blue-700"}`}
+            >
+              {reviewMode ? "Exit Review" : "Review"}
+            </button>
+          </div>
         </div>
 
         {scan.image_quality && (
@@ -197,6 +280,52 @@ export default function ScanResultPage() {
             Blur: {scan.image_quality.blur} | Glare: {scan.image_quality.glare} |{" "}
             Perspective: {scan.image_quality.perspective} | Resolution: {scan.image_quality.resolution} |{" "}
             Action: <span className="font-medium">{scan.image_quality.recommended_action}</span>
+          </div>
+        )}
+
+        {/* Location capture — only shown in review mode */}
+        {reviewMode && (
+          <div className="mb-4 rounded-xl bg-white p-4 shadow">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Inspection Location</h3>
+            {location ? (
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-slate-700">
+                  ({location.latitude.toFixed(6)}, {location.longitude.toFixed(6)})
+                  {location.accuracy_meters != null && <span className="text-slate-400"> ±{Math.round(location.accuracy_meters)}m</span>}
+                </span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${location.source === "GPS" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
+                  {location.source}
+                </span>
+                <button onClick={() => setLocation(null)} className="text-xs text-red-500 hover:underline">Clear</button>
+              </div>
+            ) : locationStatus === "manual" ? (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input type="text" placeholder="Latitude" value={manualLat} onChange={(e) => setManualLat(e.target.value)}
+                    className="w-32 rounded border border-slate-300 px-2 py-1 text-xs" />
+                  <input type="text" placeholder="Longitude" value={manualLng} onChange={(e) => setManualLng(e.target.value)}
+                    className="w-32 rounded border border-slate-300 px-2 py-1 text-xs" />
+                  <input type="text" placeholder="Address (optional)" value={manualAddress} onChange={(e) => setManualAddress(e.target.value)}
+                    className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs" />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={submitManualLocation} className="rounded bg-blue-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-blue-700">Save Location</button>
+                  <button onClick={() => setLocationStatus("idle")} className="text-xs text-slate-400 hover:underline">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button onClick={captureGPS} disabled={locationStatus === "capturing"}
+                  className="rounded bg-green-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-green-700 disabled:opacity-50">
+                  {locationStatus === "capturing" ? "Locating..." : "Use GPS"}
+                </button>
+                <button onClick={() => setLocationStatus("manual")}
+                  className="rounded border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-50">
+                  Enter Manually
+                </button>
+                <span className="self-center text-[10px] text-slate-400">Optional — skip to submit without location</span>
+              </div>
+            )}
           </div>
         )}
 
