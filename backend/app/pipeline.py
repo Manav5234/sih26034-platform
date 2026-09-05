@@ -233,7 +233,7 @@ def run_pipeline(
     for bc in barcodes:
         if bc["format"] != "QRCODE":
             barcode_value = bc["data"]
-            provider_data = ProductLookupAdapter.lookup(bc["data"])
+            provider_data = ProductLookupAdapter.lookup(bc["data"], db=db)
             if provider_data:
                 break
 

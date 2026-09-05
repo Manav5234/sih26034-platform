@@ -92,6 +92,21 @@ class Product(Base):
     scans = relationship("Scan", back_populates="product")
 
 
+class ProductCache(Base):
+    """Cached external product lookup results keyed by barcode.
+
+    MVP: cache indefinitely (product catalog data changes rarely).
+    None values stored as JSON null to distinguish "queried but not found"
+    from "never queried".
+    """
+    __tablename__ = "product_cache"
+
+    barcode = Column(String, primary_key=True)
+    result = Column(JSONB, nullable=True)  # null = not found; dict = found
+    adapter = Column(String, nullable=True)  # which adapter returned the result
+    fetched_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
 # ---------------------------------------------------------------------------
 # Scans
 # ---------------------------------------------------------------------------
