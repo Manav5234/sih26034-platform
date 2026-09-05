@@ -262,20 +262,12 @@ def run_pipeline(
             product_id = prod.id
 
     # ── Step 5: Evidence fusion ──
-    # Raw OCR text capture for evidence transparency
-    raw_texts: dict = {}
-    for r in ocr_lines:
-        t = r["text"].lower()
-        if not raw_texts.get("mrp") and any(k in t for k in ["mrp", "max", "retail", "price"]):
-            raw_texts["mrp"] = r["text"]
-        if not raw_texts.get("net_quantity") and any(
-            k in t for k in ["net", "qty", "quantity", "net wt"]
-        ):
-            raw_texts["net_quantity"] = r["text"]
-        if not raw_texts.get("manufacturer") and any(
-            k in t for k in ["manufacturer", "mfd", "mfg", "co", "ltd", "pvt"]
-        ):
-            raw_texts["manufacturer"] = r["text"]
+    # Bug 1c fix: evidence raw_text comes FROM the extraction result, not
+    # an independent keyword scan.  Each extraction function returns the
+    # matched line text as "raw_text" — this is the sole source of truth.
+    ocr_mrp_raw = mrk.get("raw_text", "") if mrk else ""
+    ocr_nq_raw = nq.get("raw_text", "") if nq else ""
+    ocr_mf_raw = mf.get("raw_text", "") if mf else ""
 
     # OCR extracted values (None if not found)
     ocr_mrp = mrk if mrk else None
@@ -300,9 +292,9 @@ def run_pipeline(
     img_id = image_ids[0] if image_ids else None
 
     field_fusions = [
-        ("mrp", "LMR-2024-001", fused_mrp, raw_texts.get("mrp", "")),
-        ("net_quantity", "LMR-2024-002", fused_nq, raw_texts.get("net_quantity", "")),
-        ("manufacturer", "LMR-2024-003", fused_mf, raw_texts.get("manufacturer", "")),
+        ("mrp", "LMR-2024-001", fused_mrp, ocr_mrp_raw),
+        ("net_quantity", "LMR-2024-002", fused_nq, ocr_nq_raw),
+        ("manufacturer", "LMR-2024-003", fused_mf, ocr_mf_raw),
     ]
 
     for field_name, rule_id, fusion, raw_text in field_fusions:
@@ -337,6 +329,22 @@ def run_pipeline(
             verdict = VerificationState.SATISFIED
             reason = None
             extracted_value = fusion.fused_value
+
+        # Bug 1d safety guardrail: if extracted_value is non-None but the
+        # OCR evidence raw_text is empty, this is an internal inconsistency —
+        # a value cannot be valid without backing evidence.  Force to None
+        # rather than silently shipping a fabricated value.
+        if extracted_value is not None and raw_text == "":
+            has_provider = any(s["source"] != "ocr" for s in fusion.sources)
+            if not has_provider:
+                logger.warning(
+                    "Evidence guardrail: %s has value %s but empty OCR raw_text "
+                    "and no provider evidence — forcing NOT_VERIFIED",
+                    field_name, extracted_value,
+                )
+                extracted_value = None
+                verdict = VerificationState.NOT_VERIFIED
+                reason = f"{field_name}: extraction produced value without evidence (guardrail)"
 
         decl = DeclDB(
             id=decl_id,

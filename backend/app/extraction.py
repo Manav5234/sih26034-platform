@@ -5,10 +5,17 @@ drawn from the real OCR confidence of the matching token(s).
 
 If a field's keyword is not found → Declaration with extracted_value=null,
 confidence=0 → rule engine produces VIOLATION/NOT_VERIFIED.
+
+Each extraction function returns a dict with an extra ``raw_text`` key containing
+the OCR line text that produced the value.  This is the SOLE source of evidence
+text — the pipeline must use it, never an independent keyword scan.
 """
 
+import logging
 import re
 from typing import List, Dict, Optional, Any
+
+logger = logging.getLogger(__name__)
 
 # ---------- known OCR misread aliases for net_quantity ----------
 # These are REAL misreads observed in this project's own test data
@@ -23,7 +30,16 @@ _NET_QTY_ALIASES = {
 }
 
 # ---------- field-specific regex patterns ----------
-_MRP_PATTERN = re.compile(r"[\₹Rupees]{0,2}\s*[\d,]+\.?\d*\s*(?:INR|RS|Rs)?", re.IGNORECASE)
+
+# Bug 1a fix: require a currency marker (₹, Rs, RS, INR) near the number.
+# A bare number with no currency context must never match.
+_MRP_PATTERN = re.compile(
+    r"(?:₹|Rs\.?|RS\.?|INR)\s*[\d,]+\.?\d*|"   # currency BEFORE number
+    r"[\d,]+\.?\d*\s*(?:₹|Rs\.?|RS\.?|INR)",     # currency AFTER number
+    re.IGNORECASE,
+)
+_MRP_ALIASES = {"max", "retail", "price"}
+
 NET_QTY_PATTERN = re.compile(
     r"[Nn]et.?[Qq]ty\.?[:\s]+[\d.]+\s*(?:g|kg|ml|l|oz|lb|pcs)?|"
     r"[\d.]+\s*(?:g|kg|ml|l|oz|lb|pcs)\s*(?:net|Net).?[Qq]ty|"
@@ -39,16 +55,27 @@ MANUFACTURER_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Bug 3: header/reference lines that indicate the keyword is a label, not data
+_HEADER_SIGNALS = re.compile(
+    r"REFER|NAME.*ADDRESS|LIC\s*NO|FOR\s+MANUFACTURER|LABEL|DETAILS",
+    re.IGNORECASE,
+)
+
 
 def _find_best_match(
     results: List[Dict],
     pattern: re.Pattern,
     keyword: str,
     aliases: Optional[set] = None,
+    require_keyword: bool = False,
 ) -> Optional[Dict]:
     """Find the best matching result for a field using keyword + regex.
 
     Returns the matched result dict or None if no match found.
+
+    If *require_keyword* is True and no line contains the keyword, return
+    None immediately instead of falling back to all lines.  This prevents
+    phantom extraction from unrelated text.
     """
     keyword_lower = keyword.lower()
     # Build the set of words to match against
@@ -63,9 +90,11 @@ def _find_best_match(
 
     keyword_results = [r for r in results if _text_matches(r["text"])]
 
-    # If keyword filtering returned no results, fall back to all results
-    # so that field‑specific regex patterns can still match
+    # Bug 1b fix: when require_keyword=True and no keyword found, do NOT
+    # fall back to all results — return None to avoid fabricating values.
     if not keyword_results:
+        if require_keyword:
+            return None
         keyword_results = results
 
     best: Optional[Dict] = None
@@ -91,10 +120,14 @@ def _find_best_match(
 def extract_mrp(results: List[Dict]) -> Optional[Dict[str, Any]]:
     """Extract MRP (Maximum Retail Price) from OCR results.
 
-    Returns dict like {"amount": float, "currency": "INR", "confidence": float}
-    or None.
+    Returns dict like {"amount": float, "currency": "INR", "confidence": float,
+    "raw_text": str} or None.
+
+    Bug 1b fix: require_keyword=True — if no line contains an MRP-related
+    keyword (mrp, max, retail, price), return None.  Never fall back to
+    scanning unrelated lines for any number.
     """
-    matched = _find_best_match(results, _MRP_PATTERN, "mrp")
+    matched = _find_best_match(results, _MRP_PATTERN, "mrp", aliases=_MRP_ALIASES, require_keyword=True)
     if not matched:
         return None
 
@@ -120,14 +153,15 @@ def extract_mrp(results: List[Dict]) -> Optional[Dict[str, Any]]:
         "amount": round(amount, 2),
         "currency": currency,
         "confidence": matched["confidence"],
+        "raw_text": matched["text"],
     }
 
 
 def extract_net_quantity(results: List[Dict]) -> Optional[Dict[str, Any]]:
     """Extract net quantity from OCR results.
 
-    Returns dict like {"value": float, "unit": "g", "confidence": float}
-    or None.
+    Returns dict like {"value": float, "unit": "g", "confidence": float,
+    "raw_text": str} or None.
     """
     matched = _find_best_match(results, NET_QTY_PATTERN, "net_quantity", aliases=_NET_QTY_ALIASES)
     if not matched:
@@ -162,40 +196,86 @@ def extract_net_quantity(results: List[Dict]) -> Optional[Dict[str, Any]]:
         "value": round(value, 2),
         "unit": unit,
         "confidence": matched["confidence"],
+        "raw_text": matched["text"],
     }
 
 
 def extract_manufacturer(results: List[Dict]) -> Optional[Dict[str, Any]]:
     """Extract manufacturer name from OCR results.
 
-    Returns dict like {"name": str, "confidence": float} or None.
+    Returns dict like {"name": str, "confidence": float, "raw_text": str}
+    or None.
+
+    Bug 3 fix: when the keyword-matched line is a header/reference line
+    (e.g. "FOR MANUFACTURER'S NAME, ADDRESS AND LIC NO"), search a small
+    window of adjacent lines for a plausible manufacturer name/address.
+    The regex pattern won't match lines like MANUFACTURER'S (apostrophe),
+    so we must do the header check BEFORE the regex gate.
     """
-    matched = _find_best_match(results, MANUFACTURER_PATTERN, "manufacturer")
-    if not matched:
+    keyword_results = [r for r in results if any(
+        w in r["text"].lower() for w in {"manufacturer", "mfd", "mfg", "created"}
+    )]
+
+    if not keyword_results:
         return None
 
-    # Return the first captured group that has content
-    for group_idx in range(1, MANUFACTURER_PATTERN.groups + 1):
-        # Actually, let's just extract from the matched text directly
-        text = matched["text"]
-        # Strip common prefixes
+    # Pass 1: try standard regex on keyword-matched lines
+    best = None
+    best_score = -1
+    for r in keyword_results:
+        match = MANUFACTURER_PATTERN.search(r["text"])
+        if not match:
+            continue
+        match_len = len(match.group(0))
+        score = match_len * 10 + r["confidence"]
+        if score > best_score:
+            best_score = score
+            best = r
+
+    if best is not None:
         cleaned = re.sub(
-            r"^[Mm]anufacturer[:\s]+|^[Mm]fd[:\s]+|^[Cc]reated[:\s]+",
+            r"^[Mm]anufacturer[:\s]+|^[Mm]fd[:\s]+by[:\s]*|^[Mm]fg[:\s]+by[:\s]*|^[Cc]reated[:\s]+by[:\s]*|^[Mm]fd[:\s]+|^[Mm]fg[:\s]+|^[Cc]reated[:\s]+",
             "",
-            text,
+            best["text"],
             flags=re.IGNORECASE,
         ).strip()
         if cleaned:
-            return {"name": cleaned, "confidence": matched["confidence"]}
+            return {"name": cleaned, "confidence": best["confidence"], "raw_text": best["text"]}
+        return None
 
-    # Fallback: return the full matched text stripped of prefixes
-    text = matched["text"]
-    cleaned = re.sub(
-        r"^[Mm]anufacturer[:\s]+|^[Mm]fd[:\s]+|^[Cc]reated[:\s]+",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    ).strip()
-    if cleaned:
-        return {"name": cleaned, "confidence": matched["confidence"]}
+    # Pass 2: no regex match — check if any keyword line is a header/reference
+    for idx, r in enumerate(keyword_results):
+        text = r["text"]
+        if not _HEADER_SIGNALS.search(text):
+            continue
+
+        # Find original index in the full results list
+        matched_idx = None
+        for i, full_r in enumerate(results):
+            if full_r["text"] == r["text"] and full_r["confidence"] == r["confidence"]:
+                matched_idx = i
+                break
+
+        if matched_idx is None:
+            continue
+
+        # Search 1-3 lines before the header (Indian labels: address above the footnote)
+        for offset in range(1, 4):
+            check_idx = matched_idx - offset
+            if check_idx < 0:
+                break
+            cand_text = results[check_idx]["text"].strip()
+            if re.search(
+                r"\b(?:PVT|LTD|LLP|INC|CO|BEVERAGES|ENTERPRISES|INDUSTRIES|MANUFACTURER)\b",
+                cand_text,
+                re.IGNORECASE,
+            ):
+                cleaned = re.sub(r"^[^A-Za-z]+", "", cand_text).strip()
+                if cleaned:
+                    return {
+                        "name": cleaned,
+                        "confidence": results[check_idx]["confidence"],
+                        "raw_text": cand_text,
+                    }
+
     return None
