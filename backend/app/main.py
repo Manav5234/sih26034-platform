@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import List, Optional
 from uuid import UUID, uuid4
 
@@ -11,6 +11,7 @@ from app.auth import create_access_token, get_current_officer, require_role, ver
 from app.config import settings
 from app.db.models import (
     Officer as OfficerDB,
+    Product as ProdDB,
     Scan as ScanDB,
     Image as ImageDB,
     Declaration as DeclDB,
@@ -32,9 +33,15 @@ from app.schemas.api import (
     DashboardResponse,
     HealthResponse,
     ImageUploadResponse,
+    PaginatedInspections,
+    PaginatedProducts,
+    PaginatedScans,
+    ProductListItem,
     ScanComplianceResponse,
     ScanCreateResponse,
     ScanEvidenceGroup,
+    ScanListItem,
+    InspectionListItem,
 )
 from app.schemas.declaration import Declaration
 from app.schemas.enums import (
@@ -159,12 +166,14 @@ async def create_scan(
             image_ids.append(img_row.id)
 
         # Run pipeline (OCR + barcode + extraction + rule engine)
-        iq, declarations, overall, barcode_evidence = run_pipeline(scan_id, image_ids, db)
+        iq, declarations, overall, barcode_evidence, product_id = run_pipeline(scan_id, image_ids, db)
 
         scan.status = ScanStatus.COMPLETED
         scan.overall_status = overall
         scan.image_quality = iq
         scan.warnings = []
+        if product_id:
+            scan.product_id = product_id
 
         for decl in declarations:
             db.add(decl)
@@ -305,6 +314,107 @@ def get_scan_compliance(scan_id: UUID):
 
 
 # ---------------------------------------------------------------------------
+# Scans list
+# ---------------------------------------------------------------------------
+
+@app.get("/scans", response_model=PaginatedScans)
+def list_scans(
+    status: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    officer_id: Optional[UUID] = None,
+    barcode: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _officer: OfficerDB = Depends(get_current_officer),
+):
+    with Session(engine) as db:
+        q = db.query(ScanDB)
+
+        if status:
+            try:
+                q = q.filter(ScanDB.overall_status == VerificationState(status))
+            except ValueError:
+                pass
+
+        if date_from:
+            q = q.filter(ScanDB.created_at >= datetime.combine(date_from, datetime.min.time()))
+        if date_to:
+            q = q.filter(ScanDB.created_at <= datetime.combine(date_to, datetime.max.time()))
+
+        # Filter by officer_id: scans that have inspections by this officer
+        if officer_id:
+            officer_scan_ids = (
+                db.query(InspectionDB.scan_id)
+                .filter(InspectionDB.officer_id == officer_id)
+                .distinct()
+                .subquery()
+            )
+            q = q.filter(ScanDB.id.in_(db.query(officer_scan_ids)))
+
+        # Filter by barcode: scans with barcode evidence matching this code
+        if barcode:
+            barcode_scan_ids = (
+                db.query(ImageDB.scan_id)
+                .join(EvDB, EvDB.image_id == ImageDB.id)
+                .filter(
+                    EvDB.raw_text.ilike(f"%{barcode}%"),
+                    EvDB.source_type.in_(["BARCODE", "QR"]),
+                )
+                .distinct()
+                .subquery()
+            )
+            q = q.filter(ScanDB.id.in_(db.query(barcode_scan_ids)))
+
+        total = q.count()
+        rows = q.order_by(ScanDB.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+        items = []
+        for s in rows:
+            # Check if scan has any inspection
+            has_inspection = db.query(InspectionDB).filter(InspectionDB.scan_id == s.id).first() is not None
+            decl_count = db.query(DeclDB).filter(DeclDB.scan_id == s.id).count()
+
+            # Get product name from linked product
+            product_name = None
+            barcode_val = None
+            if s.product_id:
+                prod = db.get(ProdDB, s.product_id)
+                if prod:
+                    product_name = prod.identity
+                    barcode_val = prod.barcode_code
+
+            # If no product linked, try barcode evidence
+            if not barcode_val:
+                bc_ev = (
+                    db.query(EvDB)
+                    .join(ImageDB, EvDB.image_id == ImageDB.id)
+                    .filter(
+                        ImageDB.scan_id == s.id,
+                        EvDB.source_type.in_(["BARCODE", "QR"]),
+                    )
+                    .first()
+                )
+                if bc_ev and bc_ev.raw_text:
+                    # raw_text format: "EAN-13: 8901542001406"
+                    parts = bc_ev.raw_text.split(": ", 1)
+                    barcode_val = parts[1] if len(parts) > 1 else bc_ev.raw_text
+
+            items.append(ScanListItem(
+                id=s.id,
+                status=s.status.value,
+                overall_status=s.overall_status.value if s.overall_status else None,
+                product_name=product_name,
+                barcode=barcode_val,
+                has_inspection=has_inspection,
+                declarations_count=decl_count,
+                created_at=s.created_at,
+            ))
+
+        return PaginatedScans(items=items, total=total, page=page, page_size=page_size)
+
+
+# ---------------------------------------------------------------------------
 # Uploaded file serving
 # ---------------------------------------------------------------------------
 
@@ -430,14 +540,15 @@ def create_inspection(
         )
 
 
-@app.get("/inspections", response_model=List[Inspection])
+@app.get("/inspections", response_model=PaginatedInspections)
 def list_inspections(
+    status: Optional[str] = None,
     officer_id: Optional[UUID] = None,
     scan_id: Optional[UUID] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     _officer: OfficerDB = Depends(get_current_officer),
 ):
     with Session(engine) as db:
@@ -450,40 +561,146 @@ def list_inspections(
             q = q.filter(InspectionDB.created_at >= datetime.combine(date_from, datetime.min.time()))
         if date_to:
             q = q.filter(InspectionDB.created_at <= datetime.combine(date_to, datetime.max.time()))
-        rows = q.order_by(InspectionDB.created_at.desc()).offset(offset).limit(limit).all()
-        return [
-            Inspection(
+
+        # Status filter: filter by the scan's overall_status
+        if status:
+            try:
+                target_status = VerificationState(status)
+                scan_ids_with_status = (
+                    db.query(ScanDB.id)
+                    .filter(ScanDB.overall_status == target_status)
+                    .subquery()
+                )
+                q = q.filter(InspectionDB.scan_id.in_(db.query(scan_ids_with_status)))
+            except ValueError:
+                pass
+
+        total = q.count()
+        rows = q.order_by(InspectionDB.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+        items = []
+        for r in rows:
+            officer = db.get(OfficerDB, r.officer_id)
+            items.append(InspectionListItem(
                 id=r.id,
                 scan_id=r.scan_id,
                 officer_id=r.officer_id,
-                actions=[InspectionAction(**a) for a in (r.actions or [])],
+                officer_name=officer.name if officer else None,
+                actions_count=len(r.actions or []),
                 notes=r.notes,
                 created_at=r.created_at,
-            )
-            for r in rows
-        ]
+            ))
+
+        return PaginatedInspections(items=items, total=total, page=page, page_size=page_size)
 
 
 # ---------------------------------------------------------------------------
-# Products (still stubs)
+# Products
 # ---------------------------------------------------------------------------
 
-@app.get("/products", response_model=List[CanonicalProduct])
+@app.get("/products", response_model=PaginatedProducts)
 def list_products(
-    name: Optional[str] = None,
+    search: Optional[str] = None,
     brand: Optional[str] = None,
-    barcode: Optional[str] = None,
     category: Optional[str] = None,
-    status: Optional[str] = None,
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _officer: OfficerDB = Depends(get_current_officer),
 ):
-    return []
+    from sqlalchemy import func, case
+    with Session(engine) as db:
+        q = db.query(ScanDB.product_id).distinct().subquery()
+        product_ids = [r[0] for r in db.query(q).all() if r[0] is not None]
+
+        pq = db.query(ProdDB)
+        if not product_ids:
+            return PaginatedProducts(items=[], total=0, page=page, page_size=page_size)
+
+        pq = pq.filter(ProdDB.id.in_(product_ids))
+        if search:
+            pq = pq.filter(
+                ProdDB.identity.ilike(f"%{search}%")
+                | ProdDB.brand.ilike(f"%{search}%")
+                | ProdDB.manufacturer.ilike(f"%{search}%")
+            )
+        if brand:
+            pq = pq.filter(ProdDB.brand.ilike(f"%{brand}%"))
+        if category:
+            pq = pq.filter(ProdDB.category.ilike(f"%{category}%"))
+
+        total = pq.count()
+        rows = pq.order_by(ProdDB.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+        items = []
+        for p in rows:
+            # Latest scan status for this product
+            latest_scan = (
+                db.query(ScanDB.overall_status)
+                .filter(ScanDB.product_id == p.id)
+                .order_by(ScanDB.created_at.desc())
+                .first()
+            )
+            scan_count = db.query(ScanDB).filter(ScanDB.product_id == p.id).count()
+            items.append(ProductListItem(
+                id=p.id,
+                identity=p.identity,
+                brand=p.brand,
+                category=p.category,
+                manufacturer=p.manufacturer,
+                barcode_code=p.barcode_code,
+                mrp_amount=p.mrp_amount,
+                latest_scan_status=latest_scan[0].value if latest_scan and latest_scan[0] else None,
+                total_scans=scan_count,
+                created_at=p.created_at,
+            ))
+
+        return PaginatedProducts(items=items, total=total, page=page, page_size=page_size)
 
 
 @app.get("/products/{product_id}", response_model=CanonicalProduct)
 def get_product(product_id: UUID):
-    raise HTTPException(404, "Product not found")
+    with Session(engine) as db:
+        p = db.get(ProdDB, product_id)
+        if not p:
+            raise HTTPException(404, "Product not found")
+        # Get latest scan's declarations and evidence
+        latest_scan = (
+            db.query(ScanDB)
+            .filter(ScanDB.product_id == product_id)
+            .order_by(ScanDB.created_at.desc())
+            .first()
+        )
+        decls = []
+        evidences = []
+        if latest_scan:
+            for d in db.query(DeclDB).filter(DeclDB.scan_id == latest_scan.id).all():
+                decls.append(_db_decl_to_schema(d))
+                for e in d.evidence:
+                    evidences.append(_db_ev_to_schema(e))
+        return CanonicalProduct(
+            id=p.id,
+            identity=p.identity,
+            brand=p.brand,
+            category=p.category,
+            manufacturer=p.manufacturer,
+            packer=p.packer,
+            importer=p.importer,
+            country_of_origin=p.country_of_origin,
+            quantity=Quantity(value=p.quantity_value, unit=p.quantity_unit) if p.quantity_value else None,
+            mrp=MRP(amount=p.mrp_amount, currency=p.mrp_currency) if p.mrp_amount else None,
+            dates=Dates(
+                manufacture=p.date_manufacture,
+                best_before=p.date_best_before,
+                use_by=p.date_use_by,
+            ),
+            consumer_care=p.consumer_care,
+            unit_sale_price=UnitSalePrice(amount=p.unit_sale_price_amount, currency=p.unit_sale_price_currency) if p.unit_sale_price_amount else None,
+            barcode=Barcode(code=p.barcode_code, format=p.barcode_format) if p.barcode_code else None,
+            declarations=decls,
+            evidence=evidences,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -492,16 +709,59 @@ def get_product(product_id: UUID):
 
 @app.get("/dashboard", response_model=DashboardResponse)
 def get_dashboard(officer: OfficerDB = Depends(get_current_officer)):
+    from datetime import timedelta
     with Session(engine) as db:
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - timedelta(days=today_start.weekday())
+
         total = db.query(ScanDB).count()
-        violations = db.query(ScanDB).filter(ScanDB.overall_status == VerificationState.VIOLATION).count()
-        not_ver = db.query(ScanDB).filter(ScanDB.overall_status == VerificationState.NOT_VERIFIED).count()
-        rate = (not_ver / total) if total else 0.0
+
+        # Pending review = scans with 0 inspections
+        from sqlalchemy import func, literal_column
+        scans_with_inspection = (
+            db.query(InspectionDB.scan_id)
+            .distinct()
+            .subquery()
+        )
+        pending = (
+            db.query(ScanDB)
+            .filter(~ScanDB.id.in_(db.query(scans_with_inspection)))
+            .count()
+        )
+
+        # AI verdicts
+        violations_ai = db.query(ScanDB).filter(ScanDB.overall_status == VerificationState.VIOLATION).count()
+        not_verified = db.query(ScanDB).filter(ScanDB.overall_status == VerificationState.NOT_VERIFIED).count()
+        conflict = db.query(ScanDB).filter(ScanDB.overall_status == VerificationState.CONFLICT).count()
+
+        # Officer-confirmed violations: scans where officer confirmed a VIOLATION declaration
+        officer_confirmed = 0
+        scans_with_confirm = (
+            db.query(DeclDB.scan_id)
+            .join(AuditLogDB, AuditLogDB.target_id == DeclDB.id)
+            .filter(
+                AuditLogDB.action == "inspection_confirm",
+                DeclDB.verdict == VerificationState.VIOLATION,
+            )
+            .distinct()
+            .subquery()
+        )
+        officer_confirmed = db.query(ScanDB).filter(ScanDB.id.in_(db.query(scans_with_confirm))).count()
+
+        # Time-based
+        scans_today = db.query(ScanDB).filter(ScanDB.created_at >= today_start).count()
+        scans_week = db.query(ScanDB).filter(ScanDB.created_at >= week_start).count()
+
         return DashboardResponse(
             total_scans=total,
-            violations=violations,
-            not_verified_rate=round(rate, 4),
-            recent_inspections=[],
+            scans_pending_review=pending,
+            violations_ai=violations_ai,
+            violations_officer_confirmed=officer_confirmed,
+            not_verified=not_verified,
+            conflict=conflict,
+            scans_today=scans_today,
+            scans_this_week=scans_week,
         )
 
 

@@ -22,6 +22,7 @@ from app.db.models import (
     Declaration as DeclDB,
     Evidence as EvDB,
     ComplianceResult as CRDB,
+    Product as ProdDB,
     EvidenceSourceType,
     VerificationState,
 )
@@ -106,8 +107,8 @@ def run_pipeline(
     db: Session,
     inspection_date: Optional[date] = None,
     product_category: Optional[str] = None,
-) -> Tuple[dict, List[DeclDB], VerificationState, List[EvDB]]:
-    """Return (image_quality_dict, declarations, overall_status, barcode_evidence).
+) -> Tuple[dict, List[DeclDB], VerificationState, List[EvDB], Optional[uuid.UUID]]:
+    """Return (image_quality_dict, declarations, overall_status, barcode_evidence, product_id).
 
     Pipeline:
       1. Image quality analysis
@@ -228,11 +229,37 @@ def run_pipeline(
 
     # ── Step 4: Provider lookup by decoded barcode ──
     provider_data: Optional[Dict] = None
+    barcode_value: Optional[str] = None
     for bc in barcodes:
-        if bc["format"] != "QRCODE":  # only look up EAN/UPC barcodes
+        if bc["format"] != "QRCODE":
+            barcode_value = bc["data"]
             provider_data = ProductLookupAdapter.lookup(bc["data"])
             if provider_data:
                 break
+
+    # Persist product record if barcode was found (creates or reuses existing)
+    product_id: Optional[uuid.UUID] = None
+    if barcode_value:
+        existing = db.query(ProdDB).filter(ProdDB.barcode_code == barcode_value).first()
+        if existing:
+            product_id = existing.id
+        else:
+            prod = ProdDB(
+                id=uuid.uuid4(),
+                identity=provider_data.get("name") if provider_data else None,
+                brand=provider_data.get("brand") if provider_data else None,
+                category=provider_data.get("category") if provider_data else None,
+                manufacturer=provider_data.get("manufacturer") if provider_data else None,
+                quantity_value=provider_data.get("net_quantity", {}).get("value") if provider_data and provider_data.get("net_quantity") else None,
+                quantity_unit=provider_data.get("net_quantity", {}).get("unit") if provider_data and provider_data.get("net_quantity") else None,
+                mrp_amount=provider_data.get("mrp", {}).get("amount") if provider_data and provider_data.get("mrp") else None,
+                mrp_currency=provider_data.get("mrp", {}).get("currency") if provider_data and provider_data.get("mrp") else None,
+                barcode_code=barcode_value,
+                barcode_format=barcodes[0]["format"] if barcodes else None,
+            )
+            db.add(prod)
+            db.flush()
+            product_id = prod.id
 
     # ── Step 5: Evidence fusion ──
     # Raw OCR text capture for evidence transparency
@@ -348,4 +375,4 @@ def run_pipeline(
             )
             decl.compliance_results = [cr]
 
-    return image_quality, declarations, overall, barcode_evidence
+    return image_quality, declarations, overall, barcode_evidence, product_id
