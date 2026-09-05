@@ -138,6 +138,7 @@ class Image(Base):
     id = _uuid_pk()
     scan_id = Column(UUID(as_uuid=True), ForeignKey("scans.id", ondelete="CASCADE"), nullable=False, index=True)
     url = Column(Text, nullable=False)
+    label = Column(String, nullable=True)  # "front" | "back" | None (pre-phase-15 images)
     uploaded_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
     scan = relationship("Scan", back_populates="images")
@@ -186,6 +187,7 @@ class Declaration(Base):
     scan = relationship("Scan", back_populates="declarations")
     evidence = relationship("Evidence", back_populates="declaration", cascade="all, delete-orphan")
     compliance_results = relationship("ComplianceResult", back_populates="declaration", cascade="all, delete-orphan")
+    nutrition_facts = relationship("NutritionFact", back_populates="declaration", cascade="all, delete-orphan")
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +206,24 @@ class ComplianceResult(Base):
 
     declaration = relationship("Declaration", back_populates="compliance_results")
     rule = relationship("Rule", back_populates="compliance_results")
+
+
+# ---------------------------------------------------------------------------
+# Nutrition Facts (structured sub-schema for nutrition panel extraction)
+# ---------------------------------------------------------------------------
+
+class NutritionFact(Base):
+    __tablename__ = "nutrition_facts"
+
+    id = _uuid_pk()
+    declaration_id = Column(UUID(as_uuid=True), ForeignKey("declarations.id", ondelete="CASCADE"), nullable=False, index=True)
+    nutrient = Column(String, nullable=False)          # "energy", "carbohydrate", "sugars", etc.
+    value = Column(Float, nullable=True)                # NULL if not legible (individual NOT_VERIFIED)
+    unit = Column(String, nullable=False)               # "kcal", "g", "mg"
+    confidence = Column(Float, nullable=False)          # per-nutrient confidence
+    raw_text = Column(Text, nullable=True)              # original OCR text for this line
+
+    declaration = relationship("Declaration", back_populates="nutrition_facts")
 
 
 # ---------------------------------------------------------------------------

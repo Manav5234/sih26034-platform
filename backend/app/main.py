@@ -173,20 +173,23 @@ def login(body: AuthLoginRequest, request: Request):
 # Scan
 # ---------------------------------------------------------------------------
 
-@app.post("/scan", response_model=ScanCreateResponse)
+@app.post("/scan", response_model=ScanCreateResponse,
+          summary="Create a new scan with front and back images",
+          description="Upload front (mandatory) and back (mandatory) product images for compliance analysis. Both images are required.")
 async def create_scan(
-    images: List[UploadFile] = File(...),
+    front: UploadFile = File(..., description="Front product image (mandatory)"),
+    back: UploadFile = File(..., description="Back product image (mandatory)"),
     officer: OfficerDB = Depends(get_current_officer),
 ):
-    # Read + validate uploads once
-    image_bytes: list[tuple[UploadFile, bytes]] = []
-    for img in images:
+    # Read and validate both images
+    front_bytes = await front.read()
+    back_bytes = await back.read()
+
+    for label, img, raw_bytes in [("front", front, front_bytes), ("back", back, back_bytes)]:
         if img.content_type not in ALLOWED_MIME:
-            raise HTTPException(400, f"Invalid file type: {img.content_type}. Allowed: jpeg, png, webp")
-        raw = await img.read()
-        if len(raw) > MAX_UPLOAD_BYTES:
-            raise HTTPException(400, f"File too large (max {MAX_UPLOAD_BYTES // (1024*1024)}MB)")
-        image_bytes.append((img, raw))
+            raise HTTPException(400, f"{label} image: invalid file type '{img.content_type}'. Allowed: jpeg, png, webp")
+        if len(raw_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(400, f"{label} image: file too large (max {MAX_UPLOAD_BYTES // (1024*1024)}MB)")
 
     scan_id = uuid4()
 
@@ -196,9 +199,9 @@ async def create_scan(
         db.flush()
 
         image_ids: List[UUID] = []
-        for img, raw in image_bytes:
-            url = storage.save(str(scan_id), img.filename or "upload.jpg", raw)
-            img_row = ImageDB(id=uuid4(), scan_id=scan_id, url=url)
+        for label, img, raw in [("front", front, front_bytes), ("back", back, back_bytes)]:
+            url = storage.save(str(scan_id), img.filename or f"{label}.jpg", raw)
+            img_row = ImageDB(id=uuid4(), scan_id=scan_id, url=url, label=label)
             db.add(img_row)
             db.flush()
             image_ids.append(img_row.id)
@@ -238,7 +241,11 @@ def get_scan(scan_id: UUID):
 
         iq = None
         if scan.image_quality:
-            iq = ImageQuality(**scan.image_quality)
+            iq = {
+                k: ImageQuality(**v)
+                for k, v in scan.image_quality.items()
+                if isinstance(v, dict) and "blur" in v
+            }
 
         return Scan(
             id=scan.id,

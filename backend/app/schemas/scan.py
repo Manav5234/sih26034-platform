@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -29,7 +29,7 @@ class Scan(BaseModel):
     product_id: Optional[UUID] = None
     status: ScanStatus
     images: List[ImageInfo]
-    image_quality: Optional[ImageQuality] = None
+    image_quality: Optional[Dict[str, ImageQuality]] = None
     compliance_results: List[Declaration]
     overall_status: Optional[VerificationState] = None
     warnings: List[str]
