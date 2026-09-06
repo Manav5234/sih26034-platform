@@ -51,11 +51,14 @@ def seed() -> None:
             session.flush()
 
             rules = [
+                # ponytail: clause numbers verified against the gazette text of the
+                # Legal Metrology (Packaged Commodities) Rules, 2011
+                # (consumeraffairs.nic.in / indiankanoon.org/doc/38209662)
                 Rule(
                     rule_id="LMR-2024-001",
                     rule_set_id=RULESET_ID,
-                    source_document="Legal Metrology Act, 2009",
-                    clause="Rule 5",
+                    source_document="Legal Metrology (Packaged Commodities) Rules, 2011",
+                    clause="Rule 6(1)(e)",
                     applicability="All pre-packaged goods",
                     required_declaration="mrp",
                     validation_conditions={
@@ -72,8 +75,8 @@ def seed() -> None:
                 Rule(
                     rule_id="LMR-2024-002",
                     rule_set_id=RULESET_ID,
-                    source_document="Legal Metrology Act, 2009",
-                    clause="Rule 6",
+                    source_document="Legal Metrology (Packaged Commodities) Rules, 2011",
+                    clause="Rule 6(1)(c)",
                     applicability="All pre-packaged goods",
                     required_declaration="net_quantity",
                     validation_conditions={
@@ -90,8 +93,8 @@ def seed() -> None:
                 Rule(
                     rule_id="LMR-2024-003",
                     rule_set_id=RULESET_ID,
-                    source_document="Legal Metrology Act, 2009",
-                    clause="Rule 7",
+                    source_document="Legal Metrology (Packaged Commodities) Rules, 2011",
+                    clause="Rule 6(1)(a)",
                     applicability="All pre-packaged goods",
                     required_declaration="manufacturer",
                     validation_conditions={
@@ -108,8 +111,8 @@ def seed() -> None:
                 Rule(
                     rule_id="LMR-2024-004",
                     rule_set_id=RULESET_ID,
-                    source_document="Legal Metrology Act, 2009",
-                    clause="Rule 8",
+                    source_document="Legal Metrology (Packaged Commodities) Rules, 2011",
+                    clause="Rule 6(1)(d)",
                     applicability="All pre-packaged goods",
                     required_declaration="manufacture_date",
                     validation_conditions={
@@ -122,11 +125,18 @@ def seed() -> None:
                     effective_date=date(2024, 1, 1),
                     evidence_requirements=["OCR"],
                 ),
+                # ponytail: Rule 6(1)(da) covers "best before or use by" as a single
+                # sub-clause. The extraction pipeline (extraction.py:extract_expiry_date)
+                # normalizes both keywords into one declaration field "expiry_date".
+                # This is a known simplification — the product model has separate
+                # date_best_before / date_use_by columns, but declarations don't
+                # distinguish them. Split into two rules only if the pipeline is
+                # updated to emit separate field_names.
                 Rule(
                     rule_id="LMR-2024-005",
                     rule_set_id=RULESET_ID,
-                    source_document="Legal Metrology Act, 2009",
-                    clause="Rule 9",
+                    source_document="Legal Metrology (Packaged Commodities) Rules, 2011",
+                    clause="Rule 6(1)(da)",
                     applicability="Food products, Beverages, Edible oils, Spices, Confectionery",
                     required_declaration="expiry_date",
                     validation_conditions={
@@ -156,11 +166,17 @@ def seed() -> None:
                     effective_date=date(2024, 1, 1),
                     evidence_requirements=["OCR"],
                 ),
+                # ponytail: "cautions" / warning labels are mandated by category-specific
+                # regulations (FSSAI for food, Drugs & Cosmetics Rules for medicines),
+                # not by the LM Rules directly. "Rule 10" in the LM Rules covers
+                # manufacturer address declarations — it's the wrong citation.
+                # TODO: replace source_document + clause with the actual governing
+                # regulation per product category before production use.
                 Rule(
                     rule_id="LMR-2024-007",
                     rule_set_id=RULESET_ID,
-                    source_document="Legal Metrology Act, 2009",
-                    clause="Rule 10",
+                    source_document="Legal Metrology (Packaged Commodities) Rules, 2011",
+                    clause="Rule 6(1)(g)",
                     applicability="Food products, Beverages, Edible oils, Spices, Confectionery, Cosmetics, Medicines",
                     required_declaration="cautions",
                     validation_conditions={
