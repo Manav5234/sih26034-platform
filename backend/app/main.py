@@ -1107,7 +1107,7 @@ def list_flags(
     status: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    _officer: OfficerDB = Depends(require_role("admin", "inspector")),
+    _officer: OfficerDB = Depends(require_role("ADMIN", "INSPECTOR")),
 ):
     with Session(engine) as db:
         q = db.query(ConsumerFlagDB)
@@ -1137,7 +1137,7 @@ def list_flags(
 @app.get("/flags/{flag_id}", response_model=FlagDetail)
 def get_flag(
     flag_id: UUID,
-    _officer: OfficerDB = Depends(require_role("admin", "inspector")),
+    _officer: OfficerDB = Depends(require_role("ADMIN", "INSPECTOR")),
 ):
     with Session(engine) as db:
         flag = db.get(ConsumerFlagDB, flag_id)
@@ -1161,7 +1161,7 @@ def get_flag(
 def review_flag(
     flag_id: UUID,
     body: FlagReviewRequest,
-    officer: OfficerDB = Depends(require_role("admin", "inspector")),
+    officer: OfficerDB = Depends(require_role("ADMIN", "INSPECTOR")),
 ):
     """Officer reviews a consumer flag — acknowledge, resolve, or dismiss."""
     with Session(engine) as db:
