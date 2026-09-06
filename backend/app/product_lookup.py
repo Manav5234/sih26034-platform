@@ -20,7 +20,6 @@ import os
 import re
 import urllib.request
 from datetime import datetime, timezone
-from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +49,8 @@ class _BaseAdapter:
 
     def _get_json(self, url: str, timeout: int = 10) -> dict | None:
         """Fetch JSON from a URL with timeout and error handling."""
+        if not url.startswith("https://"):
+            raise ValueError(f"Only HTTPS URLs allowed, got: {url!r}")
         try:
             req = urllib.request.Request(url, headers={
                 "User-Agent": "SIH26034-LegalMetrology/1.0",
@@ -130,12 +131,14 @@ class UPCitemdbAdapter(_BaseAdapter):
 
         url = f"https://api.upcitemdb.com/prod/trial/lookup?upc={barcode}"
         try:
+            if not url.startswith("https://"):
+                raise ValueError(f"Only HTTPS URLs allowed, got: {url!r}")
             req = urllib.request.Request(url, headers={
                 "Accept": "application/json",
                 "Authorization": f"key {api_key}",
                 "User-Agent": "SIH26034-LegalMetrology/1.0",
             })
-            resp = urllib.request.urlopen(req, timeout=10)
+            resp = urllib.request.urlopen(req, timeout=10)  # noqa: S310 — scheme validated above
             data = json.loads(resp.read())
         except urllib.error.HTTPError as e:
             if e.code == 404 or e.code == 400:
@@ -189,11 +192,13 @@ class GS1GepirAdapter(_BaseAdapter):
         # GS1 GEPIR lookup URL — returns HTML search results
         url = f"https://gepir.gs1.org/index.php/search-by-gtin?q={barcode}"
         try:
+            if not url.startswith("https://"):
+                raise ValueError(f"Only HTTPS URLs allowed, got: {url!r}")
             req = urllib.request.Request(url, headers={
                 "User-Agent": "SIH26034-LegalMetrology/1.0",
                 "Accept": "text/html",
             })
-            resp = urllib.request.urlopen(req, timeout=10)
+            resp = urllib.request.urlopen(req, timeout=10)  # noqa: S310 — scheme validated above
             html = resp.read().decode("utf-8", errors="replace")
         except Exception as e:
             logger.info("%s: request failed for barcode %s: %s", self.name, barcode, e)
@@ -250,6 +255,8 @@ class ProductLookupAdapter:
         Returns:
             Product data dict or None if not found across all adapters.
         """
+        if not barcode or not barcode.isdigit():
+            raise ValueError(f"Barcode must be numeric, got: {barcode!r}")
         # ── Check cache first ──
         if db is not None:
             try:
