@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +267,6 @@ def _should_substitute(
 ) -> bool:
     """Determine whether a substitution rule should apply to the given text."""
     subs_from = rule["from"]
-    subs_to = rule["to"]
 
     # Check if the substitution character exists in the text
     if subs_from not in text:

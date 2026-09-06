@@ -63,9 +63,8 @@ def render_docx(report: ReportData) -> bytes:
             ai_run.bold = True
             ai_color = VERDICT_COLORS.get(f.ai_verdict)
             if ai_color:
-                ai_color = ai_color
                 ai_run.font.color.rgb = ai_color
-            arrow_run = p.add_run(" \u2192 ")
+            p.add_run(" \u2192 ")
             officer_run = p.add_run(f"Officer: {f.verdict}")
             officer_run.bold = True
             o_color = VERDICT_COLORS.get(f.verdict)

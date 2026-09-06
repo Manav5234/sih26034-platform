@@ -438,11 +438,6 @@ def _ocr_with_recrop(image_path: str, image_quality: dict) -> list[dict]:
     # Convert each line to OCREvidence and generate field-specific candidates
     for line in ocr_lines:
         source_provider = line.get("source_provider", "tesseract")
-        # Use duck-typing helpers from the ensemble module
-        text = line.get("text", "").strip()
-        bbox = line.get("bbox", [0, 0, 0, 0])
-        confidence = line.get("confidence", 1.0)
-        preprocessing = line.get("preprocessing_variant", "single_pass")
 
         # Generate candidates for each field using the ensemble helper
         for field_name in all_candidates.keys():
@@ -452,7 +447,7 @@ def _ocr_with_recrop(image_path: str, image_quality: dict) -> list[dict]:
             all_candidates[field_name].extend(field_candidates)
 
     # Run the ensemble to produce unified evidence
-    ensemble_results = ensemble_ocr_evidence(all_candidates)
+    ensemble_ocr_evidence(all_candidates)
 
     # Extract current fields to decide if additional variants are needed
     mrp = extract_mrp(ocr_lines) if ocr_lines else None
@@ -516,7 +511,7 @@ def _deduplicate_barcodes(all_barcodes: list[dict]) -> tuple[list[dict], list[st
 
     deduped = []
     warnings = []
-    for value, bcs in by_value.items():
+    for _value, bcs in by_value.items():
         sources = set(bc["source_image"] for bc in bcs)
         if len(bcs) > 1 and len(sources) > 1:
             # Same barcode found on both images — keep once, mark as "both"
@@ -581,6 +576,7 @@ def run_pipeline(
                     "recommended_action": sq["recommended_action"],
                 }
         except Exception:
+            logger.exception("image quality analysis failed for %s", img["label"])
             image_quality[img["label"]] = {
                 "blur": "low", "glare": "none", "perspective": "slight_tilt",
                 "resolution": "adequate", "recommended_action": "proceed",

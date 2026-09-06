@@ -9,7 +9,7 @@ provider-specific output is never exposed to extraction.py.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +254,6 @@ def run_ocr_with_provider(
     if provider_chain is None:
         provider_chain = _PROVIDER_CHAIN
 
-    last_error: str | None = None
     for provider in provider_chain:
         try:
             result = provider.extract(image_path, variant=variant)
@@ -276,7 +275,6 @@ def run_ocr_with_provider(
                 return result
             # Empty results — try next provider
         except Exception as e:
-            last_error = str(e)
             logger.warning("Provider %s failed for %s: %s", provider.name, image_path, e)
             continue
 

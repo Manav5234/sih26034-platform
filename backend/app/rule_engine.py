@@ -6,7 +6,7 @@ inspection_date is an explicit input parameter.
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -295,7 +295,6 @@ class RuleEngine:
         Each result dict: {rule_id, field_name, verdict, reason, confidence}.
         """
         ruleset = select_ruleset(self.db, self.jurisdiction, inspection_date)
-        rules_by_field = {r.required_declaration: r for r in ruleset.rules}
 
         results: list[dict[str, Any]] = []
         verdicts: list[VerificationState] = []

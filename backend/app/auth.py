@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import UUID
 
 import bcrypt
@@ -10,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db.models import Officer as OfficerDB
+from app.database import get_db
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
@@ -52,7 +52,6 @@ def _get_current_officer(
     try:
         payload = jwt.decode(raw, settings.jwt_secret, algorithms=[ALGORITHM])
         officer_id = UUID(payload["sub"])
-        role = payload["role"]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from e
 

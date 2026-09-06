@@ -13,7 +13,7 @@ text — the pipeline must use it, never an independent keyword scan.
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -607,7 +607,6 @@ def extract_mrp(results: list[dict]) -> dict[str, Any] | None:
                     "tier": 1,  # "MAXIMUM RETAIL PRICE" → tier 1 even without currency
                 }
         # Fall through to normal processing if no exact match found
-    end_special_case = True
 
     # Use the existing _find_best_match which handles keyword/alias filtering
     # and pattern matching.  We pass require_keyword=True so that bare numbers
@@ -786,7 +785,7 @@ def extract_manufacturer(results: list[dict]) -> dict[str, Any] | None:
         return None
 
     # Pass 2: no regex match — check if any keyword line is a header/reference
-    for idx, r in enumerate(keyword_results):
+    for _idx, r in enumerate(keyword_results):
         text = r["text"]
         if not _HEADER_SIGNALS.search(text):
             continue
