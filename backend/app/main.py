@@ -1,7 +1,6 @@
 import time as _time
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
-from typing import List, Optional
 from uuid import UUID, uuid4
 
 import cv2
@@ -98,6 +97,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Top-level exception handler — logs traceback and returns proper JSON error
+# so the frontend gets a parseable response instead of a raw connection failure.
+# Without this, unhandled exceptions produce bare 500s without CORS headers,
+# which the browser reports as "Failed to fetch" / CORS errors.
+# ---------------------------------------------------------------------------
+import logging
+import traceback
+
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled exception on %s %s", request.method, request.url.path)
+    logger.error(traceback.format_exc())
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+    )
 
 # ---------------------------------------------------------------------------
 # Rate limiting (in-memory, login endpoint only)

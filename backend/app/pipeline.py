@@ -15,7 +15,7 @@ import os
 import tempfile
 import uuid
 from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 from sqlalchemy.orm import Session
@@ -385,8 +385,8 @@ def _apply_ocr_normalization(lines: list[dict]) -> list[dict]:
         normalized_lines.append(dict(base))
 
         # Generate normalized variants with confidence penalties
-        norm_result = normalize_ocr_text(text, orig_conf)
-        for nv_text, nv_conf in norm_result:
+        norm_result = normalize_ocr_text(text)
+        for nv_text, nv_conf in norm_result.normalized_variants:
             if nv_text != text:  # only add if actually different
                 var_line = dict(base)
                 var_line["text"] = nv_text
