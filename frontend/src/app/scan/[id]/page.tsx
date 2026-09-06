@@ -138,6 +138,15 @@ export default function ScanResultPage() {
   const [manualLng, setManualLng] = useState("");
   const [manualAddress, setManualAddress] = useState("");
 
+  // Consumer flag state
+  const [flagMode, setFlagMode] = useState(false);
+  const [flagFields, setFlagFields] = useState<string[]>([]);
+  const [flagNote, setFlagNote] = useState("");
+  const [flagContact, setFlagContact] = useState("");
+  const [flagSubmitting, setFlagSubmitting] = useState(false);
+  const [flagSubmitted, setFlagSubmitted] = useState(false);
+  const [flagError, setFlagError] = useState("");
+
   async function load() {
     try {
       const tokenRes = await fetch("/api/auth/token");
@@ -259,6 +268,39 @@ export default function ScanResultPage() {
     }]);
   }
 
+  async function submitFlag() {
+    if (flagFields.length === 0) return;
+    setFlagSubmitting(true);
+    setFlagError("");
+    try {
+      const res = await fetch(`${API}/scan/${id}/flag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reported_fields: flagFields,
+          reporter_note: flagNote || null,
+          reporter_contact: flagContact || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to submit flag");
+      }
+      setFlagSubmitted(true);
+      setFlagMode(false);
+    } catch (e: unknown) {
+      setFlagError(e instanceof Error ? e.message : "Failed to submit flag");
+    } finally {
+      setFlagSubmitting(false);
+    }
+  }
+
+  function toggleFlagField(field: string) {
+    setFlagFields((prev) =>
+      prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]
+    );
+  }
+
   if (loading) return <main className="flex min-h-screen items-center justify-center"><p className="text-slate-400">Loading...</p></main>;
   if (error || !scan) return <main className="flex min-h-screen items-center justify-center"><p className="text-red-500">{error || "Not found"}</p></main>;
 
@@ -371,6 +413,79 @@ export default function ScanResultPage() {
                 </button>
                 <span className="self-center text-[10px] text-slate-400">Optional — skip to submit without location</span>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Consumer Flag Section */}
+        {scan.compliance_results.length > 0 && (
+          <div className="mt-6 rounded-xl bg-white p-4 shadow">
+            {flagSubmitted ? (
+              <div className="text-center">
+                <p className="text-sm font-medium text-green-700">Thank you — your flag has been submitted.</p>
+                <p className="mt-1 text-xs text-slate-500">An officer will review it shortly.</p>
+                <button
+                  onClick={() => { setFlagSubmitted(false); setFlagFields([]); setFlagNote(""); setFlagContact(""); }}
+                  className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
+                >
+                  Flag another issue
+                </button>
+              </div>
+            ) : flagMode ? (
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-slate-700">Report a problem with this label</h3>
+                <p className="mb-3 text-xs text-slate-500">Select the fields that look incorrect:</p>
+                <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {scan.compliance_results.map((decl) => (
+                    <label key={decl.id} className="flex items-center gap-2 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={flagFields.includes(decl.field_name)}
+                        onChange={() => toggleFlagField(decl.field_name)}
+                        className="h-3.5 w-3.5 rounded border-slate-300"
+                      />
+                      {decl.field_name}
+                    </label>
+                  ))}
+                </div>
+                <textarea
+                  placeholder="Optional note (what looks wrong?)"
+                  value={flagNote}
+                  onChange={(e) => setFlagNote(e.target.value)}
+                  className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"
+                  rows={2}
+                />
+                <input
+                  type="text"
+                  placeholder="Optional contact (email or phone for follow-up)"
+                  value={flagContact}
+                  onChange={(e) => setFlagContact(e.target.value)}
+                  className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"
+                />
+                {flagError && <p className="mb-2 text-xs text-red-600">{flagError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    onClick={submitFlag}
+                    disabled={flagSubmitting || flagFields.length === 0}
+                    className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {flagSubmitting ? "Submitting..." : "Submit Flag"}
+                  </button>
+                  <button
+                    onClick={() => { setFlagMode(false); setFlagFields([]); setFlagNote(""); setFlagContact(""); setFlagError(""); }}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setFlagMode(true)}
+                className="w-full rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500 hover:border-red-300 hover:text-red-600 transition"
+              >
+                Report a problem with this label
+              </button>
             )}
           </div>
         )}

@@ -28,8 +28,8 @@ export default async function DashboardPage() {
     { label: "Officer Confirmed", value: data.violations_officer_confirmed, color: "text-red-800" },
     { label: "Not Verified", value: data.not_verified, color: "text-amber-600" },
     { label: "Conflicts", value: data.conflict, color: "text-purple-600" },
+    { label: "Pending Flags", value: data.pending_flags, color: "text-orange-600" },
     { label: "Today", value: data.scans_today, color: "text-blue-600" },
-    { label: "This Week", value: data.scans_this_week, color: "text-blue-600" },
   ];
 
   return (
@@ -64,7 +64,7 @@ export default async function DashboardPage() {
           ))}
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Link href="/scans" className="rounded-xl bg-white p-5 shadow hover:shadow-md transition">
             <h2 className="text-sm font-semibold text-slate-700">View All Scans</h2>
             <p className="mt-1 text-xs text-slate-400">Filter by status, date, officer, or barcode</p>
@@ -72,6 +72,10 @@ export default async function DashboardPage() {
           <Link href="/products" className="rounded-xl bg-white p-5 shadow hover:shadow-md transition">
             <h2 className="text-sm font-semibold text-slate-700">Product Repository</h2>
             <p className="mt-1 text-xs text-slate-400">Search products by name, brand, or category</p>
+          </Link>
+          <Link href="/flags" className="rounded-xl bg-white p-5 shadow hover:shadow-md transition">
+            <h2 className="text-sm font-semibold text-slate-700">Consumer Flags</h2>
+            <p className="mt-1 text-xs text-slate-400">Review consumer-reported issues</p>
           </Link>
         </div>
       </div>
