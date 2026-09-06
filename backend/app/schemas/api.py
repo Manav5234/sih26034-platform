@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -45,6 +44,7 @@ class DashboardResponse(BaseModel):
     conflict: int
     scans_today: int
     scans_this_week: int
+    pending_flags: int
 
 
 class ProductListItem(BaseModel):

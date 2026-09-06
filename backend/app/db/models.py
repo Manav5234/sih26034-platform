@@ -47,6 +47,13 @@ class ScanStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 
+class FlagStatus(str, enum.Enum):
+    NEW = "NEW"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    RESOLVED = "RESOLVED"
+    DISMISSED = "DISMISSED"
+
+
 # ---------------------------------------------------------------------------
 # Helpers (functions return fresh Column instances per table)
 # ---------------------------------------------------------------------------
@@ -128,6 +135,7 @@ class Scan(Base):
     images = relationship("Image", back_populates="scan", cascade="all, delete-orphan")
     declarations = relationship("Declaration", back_populates="scan", cascade="all, delete-orphan")
     inspections = relationship("Inspection", back_populates="scan")
+    flags = relationship("ConsumerFlag", back_populates="scan")
 
 
 # ---------------------------------------------------------------------------
@@ -352,3 +360,25 @@ class ReportExport(Base):
     file_path = Column(Text, nullable=True)
     status = Column(String, nullable=False, default="pending")
     created_at = _created_at()
+
+
+# ---------------------------------------------------------------------------
+# Consumer Flags
+# ---------------------------------------------------------------------------
+
+class ConsumerFlag(Base):
+    __tablename__ = "consumer_flags"
+
+    id = _uuid_pk()
+    scan_id = Column(UUID(as_uuid=True), ForeignKey("scans.id", ondelete="CASCADE"), nullable=False, index=True)
+    reported_fields = Column(JSONB, nullable=False, default=list)
+    reporter_note = Column(Text, nullable=True)
+    reporter_contact = Column(Text, nullable=True)
+    status = Column(SAEnum(FlagStatus, name="flag_status"), nullable=False, default=FlagStatus.NEW, index=True)
+    created_at = _created_at()
+    reviewed_by_officer_id = Column(UUID(as_uuid=True), ForeignKey("officers.id"), nullable=True, index=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    officer_notes = Column(Text, nullable=True)
+
+    scan = relationship("Scan", back_populates="flags")
+    reviewed_by_officer = relationship("Officer")

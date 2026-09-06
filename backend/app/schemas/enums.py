@@ -30,3 +30,10 @@ class ScanStatus(str, enum.Enum):
     PROCESSING = "PROCESSING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+
+
+class FlagStatus(str, enum.Enum):
+    NEW = "NEW"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    RESOLVED = "RESOLVED"
+    DISMISSED = "DISMISSED"

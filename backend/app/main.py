@@ -14,11 +14,15 @@ from app.auth import (
     _DUMMY_BCRYPT_HASH,
     create_access_token,
     get_current_officer,
+    require_role,
     verify_password,
 )
 from app.database import engine
 from app.db.models import (
     AuditLog as AuditLogDB,
+)
+from app.db.models import (
+    ConsumerFlag as ConsumerFlagDB,
 )
 from app.db.models import (
     Declaration as DeclDB,
@@ -48,6 +52,7 @@ from app.db.models import (
     ScanStatus,
     VerificationState,
 )
+from app.db.models import FlagStatus
 from app.image_quality import ImageQualityAnalyzer
 from app.pipeline import run_pipeline
 from app.schemas.api import (
@@ -66,6 +71,14 @@ from app.schemas.api import (
     ScanCreateResponse,
     ScanEvidenceGroup,
     ScanListItem,
+)
+from app.schemas.flag import (
+    FlagCreateRequest,
+    FlagCreateResponse,
+    FlagDetail,
+    FlagListItem,
+    FlagReviewRequest,
+    PaginatedFlags,
 )
 from app.schemas.declaration import Declaration
 from app.schemas.evidence import Evidence
@@ -923,6 +936,9 @@ def get_dashboard(officer: OfficerDB = Depends(get_current_officer)):
         scans_today = db.query(ScanDB).filter(ScanDB.created_at >= today_start).count()
         scans_week = db.query(ScanDB).filter(ScanDB.created_at >= week_start).count()
 
+        # Pending consumer flags
+        pending_flags = db.query(ConsumerFlagDB).filter(ConsumerFlagDB.status == FlagStatus.NEW).count()
+
         return DashboardResponse(
             total_scans=total,
             scans_pending_review=pending,
@@ -932,6 +948,7 @@ def get_dashboard(officer: OfficerDB = Depends(get_current_officer)):
             conflict=conflict,
             scans_today=scans_today,
             scans_this_week=scans_week,
+            pending_flags=pending_flags,
         )
 
 
@@ -1033,4 +1050,158 @@ def download_report_docx(scan_id: UUID, officer: OfficerDB = Depends(get_current
         iter([docx_bytes]),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f"attachment; filename=report-{scan_id}.docx"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Consumer Flags
+# ---------------------------------------------------------------------------
+
+_FLAG_RATE_LIMIT = 10       # max flags per IP per window
+_FLAG_WINDOW_SECONDS = 900  # 15 minutes
+
+_flag_attempts: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_flag_rate_limit(ip: str) -> None:
+    """Raise 429 if IP has exceeded the flag submission rate limit."""
+    now = _time.time()
+    cutoff = now - _FLAG_WINDOW_SECONDS
+    _flag_attempts[ip] = [t for t in _flag_attempts[ip] if t > cutoff]
+    if len(_flag_attempts[ip]) >= _FLAG_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many flag submissions. Try again later.")
+    _flag_attempts[ip].append(now)
+
+
+@app.post("/scan/{scan_id}/flag", response_model=FlagCreateResponse)
+def create_consumer_flag(
+    scan_id: UUID,
+    body: FlagCreateRequest,
+    request: Request,
+):
+    """Public endpoint — any user can flag a scan without authentication."""
+    _check_flag_rate_limit(request.client.host if request.client else "unknown")
+
+    with Session(engine) as db:
+        scan = db.get(ScanDB, scan_id)
+        if not scan:
+            raise HTTPException(404, "Scan not found")
+
+        flag = ConsumerFlagDB(
+            id=uuid4(),
+            scan_id=scan_id,
+            reported_fields=body.reported_fields,
+            reporter_note=body.reporter_note,
+            reporter_contact=body.reporter_contact,
+            status=FlagStatus.NEW,
+        )
+        db.add(flag)
+        db.commit()
+        db.refresh(flag)
+
+    return FlagCreateResponse(id=flag.id, status=flag.status)
+
+
+@app.get("/flags", response_model=PaginatedFlags)
+def list_flags(
+    status: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _officer: OfficerDB = Depends(require_role("admin", "inspector")),
+):
+    with Session(engine) as db:
+        q = db.query(ConsumerFlagDB)
+        if status:
+            try:
+                q = q.filter(ConsumerFlagDB.status == FlagStatus(status))
+            except ValueError:
+                pass
+
+        total = q.count()
+        rows = q.order_by(ConsumerFlagDB.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+        items = [
+            FlagListItem(
+                id=r.id,
+                scan_id=r.scan_id,
+                reported_fields=r.reported_fields,
+                reporter_note=r.reporter_note,
+                status=r.status,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
+        return PaginatedFlags(items=items, total=total, page=page, page_size=page_size)
+
+
+@app.get("/flags/{flag_id}", response_model=FlagDetail)
+def get_flag(
+    flag_id: UUID,
+    _officer: OfficerDB = Depends(require_role("admin", "inspector")),
+):
+    with Session(engine) as db:
+        flag = db.get(ConsumerFlagDB, flag_id)
+        if not flag:
+            raise HTTPException(404, "Flag not found")
+        return FlagDetail(
+            id=flag.id,
+            scan_id=flag.scan_id,
+            reported_fields=flag.reported_fields,
+            reporter_note=flag.reporter_note,
+            reporter_contact=flag.reporter_contact,
+            status=flag.status,
+            created_at=flag.created_at,
+            reviewed_by_officer_id=flag.reviewed_by_officer_id,
+            reviewed_at=flag.reviewed_at,
+            officer_notes=flag.officer_notes,
+        )
+
+
+@app.post("/flags/{flag_id}/review", response_model=FlagDetail)
+def review_flag(
+    flag_id: UUID,
+    body: FlagReviewRequest,
+    officer: OfficerDB = Depends(require_role("admin", "inspector")),
+):
+    """Officer reviews a consumer flag — acknowledge, resolve, or dismiss."""
+    with Session(engine) as db:
+        flag = db.get(ConsumerFlagDB, flag_id)
+        if not flag:
+            raise HTTPException(404, "Flag not found")
+
+        old_status = flag.status.value
+        flag.status = body.status
+        flag.reviewed_by_officer_id = officer.id
+        flag.reviewed_at = datetime.now(timezone.utc)
+        flag.officer_notes = body.officer_notes
+
+        # Audit log entry
+        audit = AuditLogDB(
+            id=uuid4(),
+            officer_id=officer.id,
+            action=f"flag_{body.status.value.lower()}",
+            target_type="consumer_flag",
+            target_id=flag_id,
+            payload={
+                "scan_id": str(flag.scan_id),
+                "old_status": old_status,
+                "new_status": body.status.value,
+                "officer_notes": body.officer_notes,
+            },
+        )
+        db.add(audit)
+        db.commit()
+        db.refresh(flag)
+
+    return FlagDetail(
+        id=flag.id,
+        scan_id=flag.scan_id,
+        reported_fields=flag.reported_fields,
+        reporter_note=flag.reporter_note,
+        reporter_contact=flag.reporter_contact,
+        status=flag.status,
+        created_at=flag.created_at,
+        reviewed_by_officer_id=flag.reviewed_by_officer_id,
+        reviewed_at=flag.reviewed_at,
+        officer_notes=flag.officer_notes,
     )
