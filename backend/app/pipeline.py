@@ -595,6 +595,14 @@ def run_pipeline(
         if label in ocr_by_label:
             all_ocr_lines.extend(ocr_by_label[label])
 
+    # ponytail: debug OCR logging — prints raw text per panel at INFO level.
+    # No new processing, just iterating existing in-memory results.
+    for label in ["front", "back"]:
+        lines = ocr_by_label.get(label, [])
+        logger.info("OCR_DEBUG [%s] %d lines:", label, len(lines))
+        for i, line in enumerate(lines):
+            logger.info("OCR_DEBUG [%s] %2d: %.2f | %s", label, i, line.get("confidence", 0), line.get("text", ""))
+
     # ── Step 3a: Panel-aware extraction ──
     # Extract fields using panel-aware search order.
     # Search order is advisory: if found on the "wrong" panel, still accepted.

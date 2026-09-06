@@ -95,7 +95,10 @@ NET_QTY_PATTERN = re.compile(
 MANUFACTURER_PATTERN = re.compile(
     r"[Mm]anufacturer[:\s]+([^\n\r]+)|"
     r"[Mm]fd[:\s]+([^\n\r]+)|"
-    r"[Cc]reated[:\s]+([^\n\r]+)",
+    r"[Cc]reated[:\s]+([^\n\r]+)|"
+    r"[Mm]arketed[:\s]+by[:\s]+([^\n\r]+)|"
+    r"[Pp]acked[:\s]+by[:\s]+([^\n\r]+)|"
+    r"[Mm]/[Ss]\.?\s+([^\n\r]+)",
     re.IGNORECASE,
 )
 
@@ -753,8 +756,13 @@ def extract_manufacturer(results: list[dict]) -> dict[str, Any] | None:
     The regex pattern won't match lines like MANUFACTURER'S (apostrophe),
     so we must do the header check BEFORE the regex gate.
     """
+    # ponytail: expanded keyword set to cover all valid declarations under
+    # LM Rule 6(1)(a) — manufacturer, packer, marketer, or importer name
     keyword_results = [r for r in results if any(
-        w in r["text"].lower() for w in {"manufacturer", "mfd", "mfg", "created"}
+        w in r["text"].lower() for w in {
+            "manufacturer", "mfd", "mfg", "created",
+            "marketed", "packed", "packer", "importer", "m/s",
+        }
     )]
 
     if not keyword_results:
@@ -775,7 +783,9 @@ def extract_manufacturer(results: list[dict]) -> dict[str, Any] | None:
 
     if best is not None:
         cleaned = re.sub(
-            r"^[Mm]anufacturer[:\s]+|^[Mm]fd[:\s]+by[:\s]*|^[Mm]fg[:\s]+by[:\s]*|^[Cc]reated[:\s]+by[:\s]*|^[Mm]fd[:\s]+|^[Mm]fg[:\s]+|^[Cc]reated[:\s]+",
+            r"^[Mm]anufacturer[:\s]+|^[Mm]fd[:\s]+by[:\s]*|^[Mm]fg[:\s]+by[:\s]*|"
+            r"^[Cc]reated[:\s]+by[:\s]*|^[Mm]fd[:\s]+|^[Mm]fg[:\s]+|^[Cc]reated[:\s]+|"
+            r"^[Mm]arketed[:\s]+by[:\s]+|^[Pp]acked[:\s]+by[:\s]+|^[Mm]/[Ss]\.?\s*",
             "",
             best["text"],
             flags=re.IGNORECASE,
@@ -807,7 +817,7 @@ def extract_manufacturer(results: list[dict]) -> dict[str, Any] | None:
                 break
             cand_text = results[check_idx]["text"].strip()
             if re.search(
-                r"\b(?:PVT|LTD|LLP|INC|CO|BEVERAGES|ENTERPRISES|INDUSTRIES|MANUFACTURER)\b",
+                r"\b(?:PVT\.?|LTD\.?|LIMITED|LLP|INC|CO|BEVERAGES|ENTERPRISES|INDUSTRIES|MANUFACTURER)\b",
                 cand_text,
                 re.IGNORECASE,
             ):
