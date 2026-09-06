@@ -1,10 +1,11 @@
-"""OCR orchestrator — single-pass CPU OCR using pytesseract.
+"""OCR orchestrator — multi-engine OCR with provider abstraction.
 
 Initialises the model once at module level.  Returns normalised OCR results
-with BOTH per-token and per-line-grouped output.
+with BOTH per-token and per-line-grouped output.  Results include
+source_provider and preprocessing_variant fields added by the provider layer.
 
-Uses pytesseract (wrapped Tesseract OCR).  PaddleOCR is not compiled/installed
-for this environment and is omitted from requirements.txt to avoid SIGSEGV crashes.
+Uses pytesseract (wrapped Tesseract OCR) as the default provider.
+PaddleOCR can be integrated via the provider abstraction in ocr_provider.py.
 """
 
 from __future__ import annotations
@@ -20,12 +21,17 @@ import pytesseract  # type: ignore
 logger.info("pytesseract initialised at module level")
 
 
-def _normalize_result(text: str, bbox: List[float], confidence: float) -> Dict:
+def _normalize_result(
+    text: str, bbox: List[float], confidence: float,
+    source_provider: str = "tesseract", preprocessing_variant: str = "single_pass",
+) -> Dict:
     """Normalise a single OCR result to a consistent schema."""
     return {
         "text": text.strip() if text else "",
         "bbox": bbox,
         "confidence": round(max(confidence, 0.0), 3),
+        "source_provider": source_provider,
+        "preprocessing_variant": preprocessing_variant,
     }
 
 
@@ -40,8 +46,14 @@ def run_ocr(image_path: str) -> Dict[str, List[Dict]]:
         - text: str
         - bbox: List[float] [x, y, width, height]
         - confidence: float in [0, 1]
+        - source_provider: str — e.g. "tesseract" (set by provider layer)
+        - preprocessing_variant: str — e.g. "single_pass" (set by provider layer)
 
     The lists may be empty if no text is detected.
+
+    Note: Extraction functions (extract_mrp, extract_net_quantity, etc.)
+    only access ``text``, ``bbox``, and ``confidence`` — the extra keys
+    are silently ignored, preserving full backward compatibility.
     """
     import cv2
 

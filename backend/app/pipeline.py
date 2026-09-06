@@ -9,6 +9,7 @@ Multi-image pipeline (Phase 15):
   6. Per-field evidence fusion (OCR + provider)
   7. Rule engine evaluation on fused declarations
 """
+import math
 import os
 import tempfile
 import logging
@@ -124,6 +125,116 @@ def _needs_recrop(image_quality: dict, mrp: Any, nq: Any, mf: Any) -> bool:
     return False
 
 
+def _generate_ocr_variants(
+    image_path: str, image_quality: dict
+) -> List[Tuple[str, str]]:
+    """Generate selected OCR preprocessing variants based on quality metrics.
+
+    Returns list of (variant_image_path, variant_name) tuples.
+    Does NOT run OCR — only prepares the image variants to run OCR on.
+
+    Variant selection is driven by image-quality metrics — we only run
+    variants that address the observed quality issues.  This avoids
+    running every possible variant and overwhelming the pipeline.
+
+    Generated variants (in priority order):
+    1. "original" — always included
+    2. "upscaled_2x" — if resolution is low
+    3. "contrast_enhanced" — if glare is high
+    4. "deskewed" — if blur is high and a four-point contour is found
+    """
+    import cv2
+    import numpy as np
+
+    variants: List[Tuple[str, str]] = []
+
+    # Always include original image
+    variants.append((image_path, "original"))
+
+    # Read image once to avoid repeated I/O
+    img = cv2.imread(image_path)
+    if img is None:
+        return variants
+
+    h, w = img.shape[:2]
+    blur = image_quality.get("blur", "low")
+    glare = image_quality.get("glare", "none")
+    resolution = image_quality.get("resolution", "adequate")
+
+    # Upscale 2x for low-resolution images
+    if resolution == "low":
+        upscaled = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
+        try:
+            os.close(tmp_fd)
+            cv2.imwrite(tmp_path, upscaled)
+            variants.append((tmp_path, "upscaled_2x"))
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    # Contrast-enhance for high-glare images using CLAHE
+    if glare == "high":
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l2 = clahe.apply(l)
+        enhanced = cv2.merge([l2, a, b])
+        enhanced_bgr = cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
+        try:
+            os.close(tmp_fd)
+            cv2.imwrite(tmp_path, enhanced_bgr)
+            variants.append((tmp_path, "contrast_enhanced"))
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    # Deskew for high-blur images using contour-based perspective correction
+    if blur == "high":
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        contours, _ = cv2.findContours(
+            cv2.Canny(gray, 50, 150, apertureSize=3),
+            cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE,
+        )
+        if contours:
+            largest = max(contours, key=cv2.contourArea)
+            epsilon = 0.02 * cv2.arcLength(largest, True)
+            approx = cv2.approxPolyDP(largest, epsilon, True)
+            if len(approx) == 4:
+                # Four-point contour found — apply perspective rectify
+                (tl, tr, br, bl) = approx.reshape(4, 2)
+                width_a = math.hypot(br[0] - bl[0], br[1] - bl[1])
+                width_b = math.hypot(tr[0] - tl[0], tr[1] - tl[1])
+                max_width = max(int(width_a), int(width_b))
+                height_a = math.hypot(tr[0] - br[0], tr[1] - br[1])
+                height_b = math.hypot(tl[0] - bl[0], tl[1] - bl[1])
+                max_height = max(int(height_a), int(height_b))
+                dst = np.array([
+                    [0, 0], [max_width - 1, 0],
+                    [max_width - 1, max_height - 1], [0, max_height - 1]],
+                    dtype="float32")
+                src = approx.reshape(4, 2).astype("float32")
+                M = cv2.getPerspectiveTransform(src, dst)
+                warped = cv2.warpPerspective(img, M, (max_width, max_height))
+                tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
+                try:
+                    os.close(tmp_fd)
+                    cv2.imwrite(tmp_path, warped)
+                    variants.append((tmp_path, "deskewed"))
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+
+    return variants
+
+
 def _bottom_crop_ocr(image_path: str) -> List[Dict]:
     """Crop the bottom third of the image, upscale 2x, and run OCR."""
     img = cv2.imread(image_path)
@@ -177,24 +288,196 @@ def _resolve_images(scan_id: uuid.UUID, image_ids: List[uuid.UUID], db: Session)
     return images
 
 
+def _needs_recrop(image_quality: dict, mrp: Any, nq: Any, mf: Any) -> bool:
+    """Return True if a second targeted OCR pass is worth attempting."""
+    if image_quality.get("blur", "low") != "low":
+        return True
+    if image_quality.get("resolution") == "low":
+        return True
+    if image_quality.get("perspective") == "severe":
+        return True
+    if mrp is None and nq is None and mf is None:
+        return True
+    return False
+
+
+def _generate_ocr_variants_with_results(
+    image_path: str, image_quality: dict,
+    provider_result_fn
+) -> List[Dict]:
+    """Run OCR on selected preprocessing variants and merge results.
+
+    Args:
+        image_path: path to the original image
+        image_quality: quality metrics dict from image_quality.py
+        provider_result_fn: callable taking image_path → OCR result dict
+
+    Returns merged OCR lines from all selected variants, each tagged with
+    their preprocessing_variant.  Variants that fail to process are silently
+    skipped.
+    """
+    import cv2
+
+    # Generate selected variants based on quality metrics
+    variants = _generate_ocr_variants(image_path, image_quality)
+
+    merged_lines: List[Dict] = []
+    seen_texts: set = set()  # simple dedup by text
+
+    for variant_path, variant_name in variants:
+        try:
+            result = provider_result_fn(variant_path)
+        except Exception as e:
+            logger.warning("OCR variant %s failed for %s: %s", variant_name, image_path, e)
+            continue
+
+        lines = result.get("lines", [])
+        for line in lines:
+            # Tag the line with its preprocessing variant
+            line_copy = dict(line)
+            line_copy["preprocessing_variant"] = variant_name
+
+            # Simple dedup: skip if we've already seen identical text
+            line_text = line_copy.get("text", "").strip().lower()
+            if line_text and line_text not in seen_texts:
+                seen_texts.add(line_text)
+                merged_lines.append(line_copy)
+            elif line_text:
+                # Still add but mark as duplicate source
+                line_copy["_duplicate_of"] = line_text
+                merged_lines.append(line_copy)
+
+    return merged_lines
+
+
+def _apply_ocr_normalization(lines: List[Dict]) -> List[Dict]:
+    """Apply OCR error normalization to produce normalized variants.
+
+    Generates context-dependent character substitutions (₹↔€, O↔0, I↔1,
+    S↔5, B↔8) with confidence penalties.  Original text is preserved
+    alongside normalized variants for evidence tracking.
+    """
+    from app.ocr_normalization import normalize_ocr_text
+
+    normalized_lines: List[Dict] = []
+    for line in lines:
+        text = line.get("text", "")
+        orig_conf = line.get("confidence", 1.0)
+        base = {"text": text, "confidence": orig_conf,
+                "source_provider": line.get("source_provider", "tesseract"),
+                "preprocessing_variant": line.get("preprocessing_variant", "single_pass")}
+
+        # Always keep the original text as the first entry
+        normalized_lines.append(dict(base))
+
+        # Generate normalized variants with confidence penalties
+        norm_result = normalize_ocr_text(text, orig_conf)
+        for nv_text, nv_conf in norm_result:
+            if nv_text != text:  # only add if actually different
+                var_line = dict(base)
+                var_line["text"] = nv_text
+                var_line["confidence"] = nv_conf
+                var_line["_normalized_from"] = "ocr_normalization"
+                normalized_lines.append(var_line)
+
+    return normalized_lines
+
+
 def _ocr_with_recrop(image_path: str, image_quality: dict) -> List[Dict]:
-    """Run OCR with optional bottom-crop re-pass. Returns merged OCR lines."""
-    try:
-        ocr_data = run_ocr(image_path)
-    except Exception:
-        return []
+    """Run OCR with optional multi-pass preprocessing variants.
 
-    ocr_lines = ocr_data.get("lines", [])
+    Runs OCR with selected preprocessing variants (based on quality metrics)
+    and merges results.  Each result carries the preprocessing_variant tag.
 
-    # Extract current fields to decide if recrop is needed
-    mrp = extract_mrp(ocr_lines)
-    nq = extract_net_quantity(ocr_lines)
-    mf = extract_manufacturer(ocr_lines)
+    If recrop is still needed after variant analysis, the bottom-crop 2x
+    pass is also attempted.
+    """
+    # Use the provider-aware OCR extraction
+    from app.ocr_provider import run_ocr_with_provider
 
+    # First, try standard OCR
+    mrk = run_ocr_with_provider(image_path)
+    ocr_lines = mrk.get("lines", [])
+
+    # Apply OCR error normalization to produce variants with confidence penalties
+    ocr_lines = _apply_ocr_normalization(ocr_lines)
+
+    # Integrate OCR ensemble — produce unified evidence set from all candidates
+    # across providers and preprocessing variants.  This preserves ALL candidates
+    # (never silently drops lower-confidence ones) and flags conflicts for
+    # the fusion layer to resolve.
+    from app.ocr_ensemble import ensemble_ocr_evidence, generate_field_candidates
+
+    # Build candidates dict for the ensemble: field_name → list of OCREvidence
+    # We convert the normalized lines (which are dicts) to OCREvidence candidates
+    # using generate_field_candidates for each relevant field.
+    all_candidates: Dict[str, List[Any]] = {
+        "mrp": [],
+        "net_quantity": [],
+        "manufacturer": [],
+        "manufacture_date": [],
+        "expiry_date": [],
+        "cautions": [],
+        "nutrition_facts": [],
+    }
+
+    # Convert each line to OCREvidence and generate field-specific candidates
+    for line in ocr_lines:
+        source_provider = line.get("source_provider", "tesseract")
+        # Use duck-typing helpers from the ensemble module
+        text = line.get("text", "").strip()
+        bbox = line.get("bbox", [0, 0, 0, 0])
+        confidence = line.get("confidence", 1.0)
+        preprocessing = line.get("preprocessing_variant", "single_pass")
+
+        # Generate candidates for each field using the ensemble helper
+        for field_name in all_candidates.keys():
+            field_candidates = generate_field_candidates(
+                [line], field_name, source_provider,
+            )
+            all_candidates[field_name].extend(field_candidates)
+
+    # Run the ensemble to produce unified evidence
+    ensemble_results = ensemble_ocr_evidence(all_candidates)
+
+    # Extract current fields to decide if additional variants are needed
+    mrp = extract_mrp(ocr_lines) if ocr_lines else None
+    nq = extract_net_quantity(ocr_lines) if ocr_lines else None
+    mf = extract_manufacturer(ocr_lines) if ocr_lines else None
+
+    # Generate and run selected preprocessing variants
+    variant_lines = _generate_ocr_variants_with_results(
+        image_path, image_quality,
+        lambda p: run_ocr_with_provider(p),
+    )
+
+    if variant_lines:
+        # Merge variant lines with original lines, avoiding duplicates
+        existing_texts = {l.get("text", "").strip().lower() for l in ocr_lines}
+        for vline in variant_lines:
+            vt = vline.get("text", "").strip().lower()
+            if vt and vt not in existing_texts:
+                ocr_lines.append(vline)
+            elif vt:
+                # Already have this text from original — still update variant tag
+                for ol in ocr_lines:
+                    if ol.get("text", "").strip().lower() == vt:
+                        ol["preprocessing_variant"] = vline.get("preprocessing_variant", "original")
+                        break
+
+    # Still attempt bottom-crop recrop if needed
     if _needs_recrop(image_quality, mrp, nq, mf):
-        crop_lines = _bottom_crop_ocr(image_path)
-        if crop_lines:
-            ocr_lines = ocr_lines + crop_lines
+        try:
+            crop_lines = _bottom_crop_ocr(image_path)
+            if crop_lines:
+                for cl in crop_lines:
+                    cl["preprocessing_variant"] = cl.get("preprocessing_variant", "bottom_crop_2x")
+                    # Only add if not already present
+                    ct = cl.get("text", "").strip().lower()
+                    if ct and not any(ol.get("text", "").strip().lower() == ct for ol in ocr_lines):
+                        ocr_lines.append(cl)
+        except Exception:
+            pass
 
     return ocr_lines
 

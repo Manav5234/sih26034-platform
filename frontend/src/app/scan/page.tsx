@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -16,12 +16,63 @@ export default function ScanUploadPage() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
+  const [qualityError, setQualityError] = useState("");
+
+  // Check image quality before upload
+  useEffect(() => {
+    const checkQuality = async (file: File, label: string) => {
+      if (!file) return;
+      try {
+        const form = new FormData();
+        form.append("image", file);
+        const res = await fetch(`${API}/quality`, {
+          method: "POST",
+          body: form,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          // Extract human-readable message from FastAPI error formats
+          let msg = "Quality check failed";
+          if (err.detail) {
+            if (typeof err.detail === "string") {
+              msg = err.detail;
+            } else if (Array.isArray(err.detail)) {
+              msg = err.detail.length > 0 ? err.detail[0] || "Quality check failed" : "Quality check failed";
+            } else if (typeof err.detail === "object") {
+              msg = err.detail.msg || err.detail.message || "Quality check failed";
+            }
+          }
+          setQualityError(msg);
+          return;
+        }
+        const iq = await res.json();
+        if (iq.recommended_action === "recapture") {
+          setQualityError(
+            `Image is too ${iq.blur}. Please retake the ${label} image.`
+          );
+        } else {
+          setQualityError("");
+        }
+      } catch (e) {
+        setQualityError("Quality check failed");
+      }
+    };
+    const front = frontRef.current?.files?.[0] ?? frontFile;
+    const back = backRef.current?.files?.[0] ?? backFile;
+    if (front) {
+      checkQuality(front, "front");
+    }
+    if (back) {
+      checkQuality(back, "back");
+    }
+  }, [frontFile, backFile]);
 
   function handlePickFront(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) {
       setFrontFile(file);
       setFrontPreview(URL.createObjectURL(file));
+      setQualityError(""); // clear quality error on new selection
     }
   }
 
@@ -30,11 +81,16 @@ export default function ScanUploadPage() {
     if (file) {
       setBackFile(file);
       setBackPreview(URL.createObjectURL(file));
+      setQualityError(""); // clear quality error on new selection
     }
   }
 
   async function handleUpload() {
     if (!frontFile || !backFile) return;
+    if (qualityError) {
+      setError(qualityError);
+      return;
+    }
     setUploading(true);
     setProgress(0);
     setError("");
@@ -44,14 +100,10 @@ export default function ScanUploadPage() {
     form.append("back", backFile);
 
     try {
-      const tokenRes = await fetch("/api/auth/token");
-      const { token } = await tokenRes.json();
-
       setProgress(30);
 
       const res = await fetch(`${API}/scan`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
         body: form,
       });
 
@@ -59,19 +111,37 @@ export default function ScanUploadPage() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || "Upload failed");
+        // Extract human-readable message from FastAPI/Pydantic error formats:
+        // - {"detail": "string"} → string message
+        // - {"detail": ["msg1", "msg2"]} → first message from array
+        // - {"detail": {"field": "msg"}} → field-specific message
+        // - {"detail": {"type": "...", "loc": [...], "msg": "..."}} → full validation error
+        let msg = "Upload failed";
+        if (body.detail) {
+          if (typeof body.detail === "string") {
+            msg = body.detail;
+          } else if (Array.isArray(body.detail)) {
+            msg = body.detail.length > 0 ? body.detail[0]?.msg || "Upload failed" : "Upload failed";
+          } else if (typeof body.detail === "object") {
+            // Pydantic validation error: {"type": "...", "loc": [...], "msg": "...", "input": ...}
+            msg = body.detail.msg || body.detail.message || "Upload failed";
+          }
+        }
+        throw new Error(msg);
       }
 
       const data = await res.json();
       setProgress(100);
       router.push(`/scan/${data.scan_id}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      // Always ensure error is a string for safe JSX rendering
+      const errorMessage = err instanceof Error ? err.message : "Upload failed";
+      setError(String(errorMessage));
       setUploading(false);
     }
   }
 
-  const canSubmit = frontFile && backFile && !uploading;
+  const canSubmit = frontFile && backFile && !uploading && !qualityError;
 
   return (
     <main className="min-h-screen bg-gray-50 p-6">
@@ -80,6 +150,12 @@ export default function ScanUploadPage() {
         <p className="mb-6 text-sm text-slate-500">
           Upload front and back product images for compliance analysis
         </p>
+
+        {qualityError && (
+          <div className="mb-4 p-3 rounded-xl bg-red-100 border border-red-200 text-red-800">
+            <p className="font-medium">{qualityError}</p>
+          </div>
+        )}
 
         <div className="rounded-2xl bg-white p-6 shadow">
           {/* Front image picker */}

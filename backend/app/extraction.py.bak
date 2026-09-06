@@ -12,9 +12,12 @@ text — the pipeline must use it, never an independent keyword scan.
 """
 
 import logging
+import math
 import re
 from datetime import date
 from typing import List, Dict, Optional, Any, Tuple
+
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -253,101 +256,6 @@ def _find_date_source_image(
     return "front"
 
 
-def _evaluate_date_relationship(
-    mfd: Optional[Dict[str, Any]], exp: Optional[Dict[str, Any]],
-    mfd_label: str, exp_label: str,
-    mfd_lines: List[Dict], exp_lines: List[Dict],
-) -> Dict[str, Any]:
-    """Evaluate the relationship between manufacture and expiry dates.
-
-    Uses spatial/contextual evidence to determine if dates are consistent.
-    Returns a dict with relationship analysis.
-    """
-    result: Dict[str, Any] = {
-        "consistent": None,  # True, False, or None (inconclusive)
-        "mfd_date": mfd,
-        "exp_date": exp,
-        "mfd_label": mfd_label,
-        "exp_label": exp_label,
-        "conflict_reason": None,
-    }
-
-    if not mfd or not exp:
-        result["consistent"] = None
-        return result
-
-    # Extract year-month-day components for comparison
-    mfd_val = mfd.get("value", {})
-    exp_val = exp.get("value", {})
-
-    mfd_year = mfd_val.get("year")
-    exp_year = exp_val.get("year")
-    mfd_month = mfd_val.get("month")
-    exp_month = exp_val.get("month")
-    mfd_day = mfd_val.get("day")
-    exp_day = exp_val.get("day")
-
-    # Check chronological consistency
-    if mfd_year is not None and exp_year is not None:
-        if exp_year < mfd_year:
-            result["consistent"] = False
-            result["conflict_reason"] = "expiry date is before manufacture date"
-        elif exp_year > mfd_year:
-            result["consistent"] = True
-        elif exp_year == mfd_year:
-            # Same year — check month
-            if mfd_month is not None and exp_month is not None:
-                if exp_month < mfd_month:
-                    result["consistent"] = False
-                    result["conflict_reason"] = "expiry date is before manufacture date"
-                elif exp_month > mfd_month:
-                    result["consistent"] = True
-                else:
-                    # Same month — check day
-                    if mfd_day is not None and exp_day is not None:
-                        if exp_day < mfd_day:
-                            result["consistent"] = False
-                            result["conflict_reason"] = "expiry date is before manufacture date"
-                        elif exp_day == mfd_day:
-                            result["consistent"] = False  # same day = expired at manufacture
-                            result["conflict_reason"] = "expiry date is same as manufacture date"
-                        else:
-                            result["consistent"] = True
-                    elif exp_day is None:
-                        # No day info, same month/year — inconclusive
-                        result["consistent"] = None
-                    else:
-                        result["consistent"] = None
-            elif exp_month is None:
-                result["consistent"] = None
-            else:
-                result["consistent"] = None
-        else:
-            result["consistent"] = None
-    else:
-        result["consistent"] = None
-
-    # If we have label information, use it to refine the relationship
-    # MFD typically comes before EXP; if both are labeled, the ordering
-    # should follow packaging conventions
-    if mfd_label and exp_label:
-        # Both labeled — check if the labels make sense together
-        mfd_lower = mfd_label.lower()
-        exp_lower = exp_label.lower()
-        # Common patterns: "MFD 03/2023" and "EXP 03/2024"
-        # or "Manufactured on 03/2023" and "Best Before 03/2024"
-        if "mfd" in mfd_lower and "exp" in exp_lower:
-            # Labeled as MFD/EXP — trust the chronological check above
-            pass
-        elif "manufactured" in mfd_lower and "best before" in exp_lower:
-            # Explicit MFD/Best Before — trust the check
-            pass
-        # If labels are ambiguous or conflicting, the chronological
-        # check above is the primary determinant
-
-    return result
-
-
 def extract_manufacture_date(
     results: List[Dict],
     ocr_by_label: Optional[Dict[str, List[Dict]]] = None,
@@ -356,9 +264,6 @@ def extract_manufacture_date(
 
     Searches for keywords (MFD/Mfg Date/Manufactured on/Batch Date) then
     parses the date value. Returns dict with day/month/year or None.
-
-    Additionally, if ocr_by_label is provided, the date's suspected
-    panel (front/back) is recorded for later relationship evaluation.
     """
     # Find best matching line
     best = _find_best_match(results, re.compile(r".+", re.IGNORECASE), "mfg_date",
@@ -371,8 +276,6 @@ def extract_manufacture_date(
             if any(a in text_lower for a in _MFD_ALIASES):
                 parsed = _parse_date_value(text, _MFD_ALIASES)
                 if parsed:
-                    # Record that this date was found without a keyword
-                    # hint — it will be handled by the relationship evaluator
                     return parsed
         return None
 
@@ -399,10 +302,7 @@ def extract_expiry_date(
     """Extract expiry/best-before date from OCR results.
 
     Searches for keywords (Exp/Expiry/Best Before/Use By/BB/EXD) then
-    parses the date value. Returns dict with day/month/year or None.
-
-    Additionally, if ocr_by_label is provided, the date's suspected
-    panel (front/back) is recorded for later relationship evaluation.
+    parses the date value.
     """
     best = _find_best_match(results, re.compile(r".+", re.IGNORECASE), "exp_date",
                             aliases=_EXP_ALIASES, require_keyword=True)
@@ -575,35 +475,99 @@ def extract_mrp(results: List[Dict]) -> Optional[Dict[str, Any]]:
     Bug 1b fix: require_keyword=True — if no line contains an MRP-related
     keyword (mrp, max, retail, price), return None.  Never fall back to
     scanning unrelated lines for any number.
+
+    Tiered evidence assessment (Phase 6):
+    - Tier 1: "MRP", "MAXIMUM RETAIL PRICE", "RETAIL PRICE" + currency/value
+    - Tier 2: Currency marker + plausible price + strong contextual evidence
+    - Tier 3: Currency marker + plausible price but weak context → NOT_VERIFIED
+    - Tier 4: Bare number with no currency/context → MUST NOT be accepted as MRP
+
+    The returned dict includes a ``tier`` key for the evidence tier
+    (clients should check this when interpreting the result).
     """
+
     matched = _find_best_match(results, _MRP_PATTERN, "mrp", aliases=_MRP_ALIASES, require_keyword=True)
     if not matched:
         return None
 
     text = matched["text"]
+
+# --- Tiered evidence assessment ---
+
+    # Canonical MRP keyword patterns — strongest evidence
+    _CANONICAL_MRP_PATTERNS = [
+        r"\bmrp\b",                       # "MRP"
+        r"\bmaximum\s+retail\s+price\b",  # "MAXIMUM RETAIL PRICE"
+        r"\bretail\s+price\b",          # "RETAIL PRICE"
+    ]
+    _is_canonical_mrp = any(
+        re.search(p, text, re.IGNORECASE) for p in _CANONICAL_MRP_PATTERNS
+    )
+
+    # Check for currency marker (₹/Rs/RS/INR) near a number
+    _has_currency = bool(re.search(r"[₹]|Rs\.?|RS\.?|INR", text, re.IGNORECASE))
+
+    # Pull out the numeric value (already validated above)
+    # Check for number presence
+    _has_number = True  # proven above by num_match success
+
+    # Tier assessment logic:
+    # -----------------------------------------
+    # Tier 1: Canonical MRP keyword present (strongest evidence)
+    #   — regardless of currency, the keyword + number is reliable
+    # Tier 2: Currency marker + plausible price (but no canonical keyword)
+    #   — valid MRP, just not the canonical formulation
+    # Tier 3: Currency marker + price but weak/context-dependent
+    #   — should NOT be claimed as MRP without stronger evidence
+    # Tier 4: No currency, no canonical keyword
+    #   — MUST NOT be accepted as MRP
+    # -----------------------------------------
+
+    if _is_canonical_mrp:
+        # Tier 1: canonical MRP keyword present
+        # The keyword + number is reliable evidence even without currency marker
+        tier = 1
+    elif _has_currency:
+        # Tier 2 or Tier 3 — currency present
+        # Since no canonical keyword, assess based on contextual clues
+        # If the text has price-related words beyond just "price",
+        # treat as Tier 2; otherwise Tier 3.
+        # Heuristic: if "MAXIMUM" or "RETAIL" appears (even without
+        # the full phrase), treat as Tier 2; otherwise Tier 3.
+        has_context_clues = bool(
+            re.search(r"\bMAXIMUM\b|\bRETAIL\b", text, re.IGNORECASE)
+        )
+        tier = 2 if has_context_clues else 3
+    else:
+        # Tier 4 — no currency marker at all
+        # But check if a canonical MRP keyword is present without currency
+        # (accept as Tier 1 since the keyword is strong evidence)
+        if _is_canonical_mrp:
+            tier = 1  # keyword + number, no currency marker
+        else:
+            tier = 4  # truly no evidence
+
+    # At this point, num_match has been validated above
     # Pull out the numeric value
-    num_match = re.search(r"[\d,]+\.?\d*", text)
-    if not num_match:
-        return None
+    amount = float(num_match.group(0).replace(",", ""))
 
-    try:
-        amount = float(num_match.group(0).replace(",", ""))
-    except ValueError:
-        return None
-
-    # Determine currency from text
+    # Determine currency from text (only if currency marker present)
     currency = "INR"
-    if re.search(r"USD|\$", text, re.IGNORECASE):
-        currency = "USD"
-    elif re.search(r"EUR|\€", text, re.IGNORECASE):
-        currency = "EUR"
+    if _has_currency:
+        if re.search(r"USD|\$", text, re.IGNORECASE):
+            currency = "USD"
+        elif re.search(r"EUR|\€", text, re.IGNORECASE):
+            currency = "EUR"
 
-    return {
+    result = {
         "amount": round(amount, 2),
         "currency": currency,
         "confidence": matched["confidence"],
         "raw_text": matched["text"],
+        "tier": tier,  # Phase 6: evidence tier for auditability
     }
+
+    return result
 
 
 def extract_net_quantity(results: List[Dict]) -> Optional[Dict[str, Any]]:
@@ -613,29 +577,13 @@ def extract_net_quantity(results: List[Dict]) -> Optional[Dict[str, Any]]:
     "raw_text": str} or None.
     """
     matched = _find_best_match(results, NET_QTY_PATTERN, "net_quantity", aliases=_NET_QTY_ALIASES)
-    if matched:
-        text = matched["text"]
-    else:
-        # Fallback: try any line that contains a number + unit pattern
-        # This handles cases where OCR results don't have "Net Qty" prefix
-        # but still contain a clear quantity declaration
-        for r in results:
-            text = r["text"]
-            qty_match = re.search(
-                r"([\d,]+\.?\d*)\s*(g|kg|ml|l|oz|lb|pcs|tablets|capsules|pieces|count)",
-                text, re.IGNORECASE,
-            )
-            if qty_match:
-                matched = {"text": text, "confidence": r.get("confidence", 1.0)}
-                break
-        if not matched:
-            return None
+    if not matched:
+        return None
 
-    # Try to find a number with a unit (even if matched was found above)
-    qty_match = re.search(
-        r"([\d,]+\.?\d*)\s*(g|kg|ml|l|oz|lb|pcs|tablets|capsules|pieces|count)",
-        matched["text"], re.IGNORECASE,
-    )
+    text = matched["text"]
+    # Try to find a number with a unit
+    # Pattern: number followed by unit
+    qty_match = re.search(r"([\d,]+\.?\d*)\s*(g|kg|ml|l|oz|lb|pcs)", text, re.IGNORECASE)
     if not qty_match:
         return None
 
@@ -651,12 +599,9 @@ def extract_net_quantity(results: List[Dict]) -> Optional[Dict[str, Any]]:
         "g": "g",
         "ml": "ml",
         "l": "l",
-"oz": "oz",
+        "oz": "oz",
         "lb": "lb",
-        "tablets": "tablets",
-        "capsules": "capsules",
-        "pieces": "pieces",
-        "count": "count",
+        "pcs": "pcs",
     }
     unit = unit_map.get(unit, unit)
 

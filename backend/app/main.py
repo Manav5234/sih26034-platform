@@ -170,8 +170,47 @@ def login(body: AuthLoginRequest, request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Scan
+# Quality check — standalone image quality analysis (no OCR pipeline)
 # ---------------------------------------------------------------------------
+
+@app.post(
+    "/quality",
+    response_model=ImageQuality,
+    summary="Check image quality (blur, glare, perspective, resolution)",
+    description="Returns quality metrics and recommended_action ('recapture' | 'proceed_with_caution' | 'proceed') so the frontend can show 'Image is too blurry. Please retake' before OCR processing.",
+)
+async def check_image_quality(
+    file: UploadFile = File(..., description="Product image to check"),
+):
+    """Standalone image quality check — no OCR, no barcode, no pipeline.
+
+    Returns an ImageQuality dict with fields:
+      blur: "high" | "medium" | "low"
+      glare: "high" | "none"
+      perspective: "none" | "slight_tilt" | "severe"
+      resolution: "adequate" | "low"
+      recommended_action: "recapture" | "proceed_with_caution" | "proceed"
+    """
+    # Read image bytes
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(400, f"File too large (max {MAX_UPLOAD_BYTES // (1024*1024)}MB)")
+
+    # Decode with OpenCV
+    img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise HTTPException(400, "Invalid image file")
+
+    analyzer = ImageQualityAnalyzer()
+    iq = analyzer.analyze(img)
+
+    return ImageQuality(
+        blur=iq["blur"],
+        glare=iq["glare"],
+        perspective=iq["perspective"],
+        resolution=iq["resolution"],
+        recommended_action=iq["recommended_action"],
+    )
 
 @app.post("/scan", response_model=ScanCreateResponse,
           summary="Create a new scan with front and back images",
@@ -179,7 +218,6 @@ def login(body: AuthLoginRequest, request: Request):
 async def create_scan(
     front: UploadFile = File(..., description="Front product image (mandatory)"),
     back: UploadFile = File(..., description="Back product image (mandatory)"),
-    officer: OfficerDB = Depends(get_current_officer),
 ):
     # Read and validate both images
     front_bytes = await front.read()
