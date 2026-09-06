@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, List, Optional
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.schemas.evidence import Evidence
 from app.schemas.declaration import Declaration
+from app.schemas.evidence import Evidence
 
 
 class Quantity(BaseModel):
@@ -31,27 +31,27 @@ class Barcode(BaseModel):
 
 
 class Dates(BaseModel):
-    manufacture: Optional[date] = None
-    best_before: Optional[date] = None
-    use_by: Optional[date] = None
+    manufacture: date | None = None
+    best_before: date | None = None
+    use_by: date | None = None
 
 
 class CanonicalProduct(BaseModel):
     id: UUID
-    identity: Optional[str] = None
-    brand: Optional[str] = None
-    category: Optional[str] = None
-    manufacturer: Optional[str] = None
-    packer: Optional[str] = None
-    importer: Optional[str] = None
-    country_of_origin: Optional[str] = None
-    quantity: Optional[Quantity] = None
-    mrp: Optional[MRP] = None
+    identity: str | None = None
+    brand: str | None = None
+    category: str | None = None
+    manufacturer: str | None = None
+    packer: str | None = None
+    importer: str | None = None
+    country_of_origin: str | None = None
+    quantity: Quantity | None = None
+    mrp: MRP | None = None
     dates: Dates
-    consumer_care: Optional[str] = None
-    unit_sale_price: Optional[UnitSalePrice] = None
-    barcode: Optional[Barcode] = None
-    declarations: List[Declaration]
-    evidence: List[Evidence]
+    consumer_care: str | None = None
+    unit_sale_price: UnitSalePrice | None = None
+    barcode: Barcode | None = None
+    declarations: list[Declaration]
+    evidence: list[Evidence]
     created_at: datetime
     updated_at: datetime

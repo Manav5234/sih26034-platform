@@ -13,9 +13,9 @@ from app.schemas.geometry import BBox
 class Evidence(BaseModel):
     id: UUID
     source_type: EvidenceSourceType
-    raw_text: Optional[str] = None
+    raw_text: str | None = None
     confidence: float
-    image_id: Optional[UUID] = None
-    bbox: Optional[BBox] = None
-    preprocessing_variant: Optional[str] = None
+    image_id: UUID | None = None
+    bbox: BBox | None = None
+    preprocessing_variant: str | None = None
     extracted_at: datetime

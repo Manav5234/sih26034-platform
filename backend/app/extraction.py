@@ -13,8 +13,7 @@ text — the pipeline must use it, never an independent keyword scan.
 
 import logging
 import re
-from datetime import date
-from typing import List, Dict, Optional, Any, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,7 @@ _EXP_ALIASES = {
 }
 
 # ---------- nutrition patterns ----------
-NUTRIENT_PATTERNS: Dict[str, re.Pattern] = {
+NUTRIENT_PATTERNS: dict[str, re.Pattern] = {
     "energy":         re.compile(r"energy(?:\s*(?:value|content))?[:\s]*(\d+\.?\d*)\s*(kcal|kj|cal)?", re.IGNORECASE),
     "carbohydrate":   re.compile(r"carbohydrate(?:\s*(?:|total))?[:\s]*(\d+\.?\d*)\s*(g|mg)?", re.IGNORECASE),
     "sugars":         re.compile(r"(?:total\s+)?sugars?[:\s]*(\d+\.?\d*)\s*(g|mg)?", re.IGNORECASE),
@@ -108,12 +107,12 @@ _HEADER_SIGNALS = re.compile(
 
 
 def _find_best_match(
-    results: List[Dict],
+    results: list[dict],
     pattern: re.Pattern,
     keyword: str,
-    aliases: Optional[set] = None,
+    aliases: set | None = None,
     require_keyword: bool = False,
-) -> Optional[Dict]:
+) -> dict | None:
     """Find the best matching result for a field using keyword + regex.
 
     Returns the matched result dict or None if no match found.
@@ -142,7 +141,7 @@ def _find_best_match(
             return None
         keyword_results = results
 
-    best: Optional[Dict] = None
+    best: dict | None = None
     best_score = -1
 
     for r in keyword_results:
@@ -166,7 +165,7 @@ def _find_best_match(
 # Date extraction (manufacture / expiry)
 # ---------------------------------------------------------------------------
 
-def _parse_date_value(raw_text: str, aliases: set) -> Optional[Dict[str, Any]]:
+def _parse_date_value(raw_text: str, aliases: set) -> dict[str, Any] | None:
     """Parse a date from OCR text that matches one of the given aliases.
 
     Returns {"value": {"day": int|None, "month": int, "year": int},
@@ -240,7 +239,7 @@ def _parse_date_value(raw_text: str, aliases: set) -> Optional[Dict[str, Any]]:
 
 
 def _find_date_source_image(
-    ocr_by_label: Dict[str, List[Dict]],
+    ocr_by_label: dict[str, list[dict]],
     raw_text: str,
 ) -> str:
     """Find which image label contains the given OCR text."""
@@ -254,16 +253,16 @@ def _find_date_source_image(
 
 
 def _evaluate_date_relationship(
-    mfd: Optional[Dict[str, Any]], exp: Optional[Dict[str, Any]],
+    mfd: dict[str, Any] | None, exp: dict[str, Any] | None,
     mfd_label: str, exp_label: str,
-    mfd_lines: List[Dict], exp_lines: List[Dict],
-) -> Dict[str, Any]:
+    mfd_lines: list[dict], exp_lines: list[dict],
+) -> dict[str, Any]:
     """Evaluate the relationship between manufacture and expiry dates.
 
     Uses spatial/contextual evidence to determine if dates are consistent.
     Returns a dict with relationship analysis.
     """
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "consistent": None,  # True, False, or None (inconclusive)
         "mfd_date": mfd,
         "exp_date": exp,
@@ -349,9 +348,9 @@ def _evaluate_date_relationship(
 
 
 def extract_manufacture_date(
-    results: List[Dict],
-    ocr_by_label: Optional[Dict[str, List[Dict]]] = None,
-) -> Optional[Dict[str, Any]]:
+    results: list[dict],
+    ocr_by_label: dict[str, list[dict]] | None = None,
+) -> dict[str, Any] | None:
     """Extract manufacture date from OCR results.
 
     Searches for keywords (MFD/Mfg Date/Manufactured on/Batch Date) then
@@ -393,9 +392,9 @@ def extract_manufacture_date(
 
 
 def extract_expiry_date(
-    results: List[Dict],
-    ocr_by_label: Optional[Dict[str, List[Dict]]] = None,
-) -> Optional[Dict[str, Any]]:
+    results: list[dict],
+    ocr_by_label: dict[str, list[dict]] | None = None,
+) -> dict[str, Any] | None:
     """Extract expiry/best-before date from OCR results.
 
     Searches for keywords (Exp/Expiry/Best Before/Use By/BB/EXD) then
@@ -434,7 +433,7 @@ def extract_expiry_date(
 # Nutrition facts extraction
 # ---------------------------------------------------------------------------
 
-def extract_nutrition_facts(results: List[Dict]) -> List[Dict[str, Any]]:
+def extract_nutrition_facts(results: list[dict]) -> list[dict[str, Any]]:
     """Extract per-nutrient values from OCR results.
 
     Detects a "Nutrition"/"Nutritional" header, then scans subsequent lines
@@ -535,7 +534,7 @@ def _default_unit(nutrient_name: str) -> str:
 # Cautions extraction (presence-detection)
 # ---------------------------------------------------------------------------
 
-def extract_cautions(results: List[Dict]) -> Dict[str, Any]:
+def extract_cautions(results: list[dict]) -> dict[str, Any]:
     """Detect caution/warning presence on the label.
 
     Returns {"present": bool, "text": str, "confidence": float, "raw_text": str}.
@@ -566,16 +565,53 @@ def extract_cautions(results: List[Dict]) -> Dict[str, Any]:
     }
 
 
-def extract_mrp(results: List[Dict]) -> Optional[Dict[str, Any]]:
+def extract_mrp(results: list[dict]) -> dict[str, Any] | None:
     """Extract MRP (Maximum Retail Price) from OCR results.
 
     Returns dict like {"amount": float, "currency": "INR", "confidence": float,
-    "raw_text": str} or None.
+    "raw_text": str, "tier": int} or None.
 
     Bug 1b fix: require_keyword=True — if no line contains an MRP-related
     keyword (mrp, max, retail, price), return None.  Never fall back to
     scanning unrelated lines for any number.
+
+    Tier classification:
+      Tier 1: "MRP"/"max"/"retail" keyword with explicit currency
+              OR "MAXIMUM RETAIL PRICE" keyword (no currency needed)
+      Tier 2: "Price" keyword with explicit currency
+      Tier 4: keyword present but no currency (where applicable)
     """
+    from app.extraction import _find_best_match
+
+    text_lower = results[0]["text"].lower() if results else ""
+
+    # Special case: "MAXIMUM RETAIL PRICE" keyword — the keyword itself
+    # implies the field meaning, so we accept bare numbers without currency.
+    if "maximum" in text_lower and "retail" in text_lower:
+        # Find any result containing "maximum retail price" (case-insensitive)
+        for r in results:
+            if "maximum" in r["text"].lower() and "retail" in r["text"].lower():
+                text = r["text"]
+                num_match = re.search(r"[\d,]+\.?\d*", text)
+                if not num_match:
+                    return None
+                try:
+                    amount = float(num_match.group(0).replace(",", ""))
+                except ValueError:
+                    return None
+                return {
+                    "amount": round(amount, 2),
+                    "currency": "INR",
+                    "confidence": r["confidence"],
+                    "raw_text": text,
+                    "tier": 1,  # "MAXIMUM RETAIL PRICE" → tier 1 even without currency
+                }
+        # Fall through to normal processing if no exact match found
+    end_special_case = True
+
+    # Use the existing _find_best_match which handles keyword/alias filtering
+    # and pattern matching.  We pass require_keyword=True so that bare numbers
+    # without an MRP-related keyword are rejected.
     matched = _find_best_match(results, _MRP_PATTERN, "mrp", aliases=_MRP_ALIASES, require_keyword=True)
     if not matched:
         return None
@@ -593,20 +629,58 @@ def extract_mrp(results: List[Dict]) -> Optional[Dict[str, Any]]:
 
     # Determine currency from text
     currency = "INR"
+    has_currency = False
     if re.search(r"USD|\$", text, re.IGNORECASE):
         currency = "USD"
+        has_currency = True
     elif re.search(r"EUR|\€", text, re.IGNORECASE):
         currency = "EUR"
+        has_currency = True
+    elif re.search(r"₹", text):
+        currency = "INR"
+        has_currency = True
+    elif re.search(r"INR", text, re.IGNORECASE):
+        currency = "INR"
+        has_currency = True
+    elif re.search(r"Rs\.?|RS\.?", text, re.IGNORECASE):
+        currency = "INR"
+        has_currency = True
+
+    # Determine tier based on which keyword/alias triggered the match
+    text_lower = text.lower()
+
+    # Check if "price" alias triggered (and not also "MAXIMUM RETAIL PRICE")
+    is_price_alias = "price" in text_lower and not ("retail" in text_lower or "maximum" in text_lower)
+    is_mrp_keyword = bool(re.search(r"\bmrp\b", text_lower))
+    is_retail_alias = "retail" in text_lower
+    is_max_alias = "max" in text_lower and not is_retail_alias
+
+    if is_price_alias:
+        # "Price" alias triggered (and not also "MAXIMUM RETAIL PRICE")
+        tier = 2 if has_currency else 4
+    elif is_mrp_keyword:
+        # "MRP" keyword triggered
+        tier = 1 if has_currency else 4
+    elif is_retail_alias or "maximum" in text_lower:
+        # "MAXIMUM RETAIL PRICE" → tier 1 even without explicit currency
+        # (this branch is a fallback; the special case above handles it primarily)
+        tier = 1
+    elif is_max_alias:
+        # Standalone "max" → tier 1 if currency, else tier 4
+        tier = 1 if has_currency else 4
+    else:
+        tier = 1 if has_currency else 4
 
     return {
         "amount": round(amount, 2),
         "currency": currency,
         "confidence": matched["confidence"],
-        "raw_text": matched["text"],
+        "raw_text": text,
+        "tier": tier,
     }
 
 
-def extract_net_quantity(results: List[Dict]) -> Optional[Dict[str, Any]]:
+def extract_net_quantity(results: list[dict]) -> dict[str, Any] | None:
     """Extract net quantity from OCR results.
 
     Returns dict like {"value": float, "unit": "g", "confidence": float,
@@ -668,7 +742,7 @@ def extract_net_quantity(results: List[Dict]) -> Optional[Dict[str, Any]]:
     }
 
 
-def extract_manufacturer(results: List[Dict]) -> Optional[Dict[str, Any]]:
+def extract_manufacturer(results: list[dict]) -> dict[str, Any] | None:
     """Extract manufacturer name from OCR results.
 
     Returns dict like {"name": str, "confidence": float, "raw_text": str}

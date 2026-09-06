@@ -1,0 +1,13 @@
+{
+  "status": 1,
+  "product": {
+    "product_name": "Coca-Cola Zero Sugar",
+    "brands": "Coca-Cola",
+    "categories": "soft drinks",
+    "manufacturers": "The Coca-Cola Company",
+    "quantity": "500 mL",
+    "nutrition_facts": {
+      "energy": {"value": 0, "unit": "kcal"},
+      "fat": {"value": 0, "unit": "g"},
+      "sugars": {"value": 0, "unit": "g"}
+    }

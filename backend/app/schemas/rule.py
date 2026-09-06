@@ -14,10 +14,10 @@ class Rule(BaseModel):
     applicability: str
     required_declaration: str
     validation_conditions: Any
-    measurement_requirements: Optional[Any] = None
-    exceptions: List[str]
+    measurement_requirements: Any | None = None
+    exceptions: list[str]
     effective_date: date
-    evidence_requirements: List[str]
+    evidence_requirements: list[str]
 
 
 class RuleSet(BaseModel):
@@ -25,6 +25,6 @@ class RuleSet(BaseModel):
     source: str
     rule_version: str
     effective_from: date
-    effective_to: Optional[date] = None
+    effective_to: date | None = None
     jurisdiction: str
-    rules: List[Rule]
+    rules: list[Rule]

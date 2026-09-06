@@ -13,7 +13,6 @@ from typing import Tuple
 import cv2
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Thresholds (tweak per environment; exposed as module-level constants so
 # tests / callers can override them easily).
@@ -59,7 +58,7 @@ class ImageQualityAnalyzer:
     # ------------------------------------------------------------------
     # Brightness / contrast
     # ------------------------------------------------------------------
-    def detect_brightness(self, gray: np.ndarray) -> Tuple[str, str]:
+    def detect_brightness(self, gray: np.ndarray) -> tuple[str, str]:
         """Return (label, detail) where label is 'bright' | 'normal' | 'dark'
         and detail is a short human readable string."""
         mean_intensity = float(np.mean(gray))
@@ -129,7 +128,7 @@ class ImageQualityAnalyzer:
     # ------------------------------------------------------------------
     # Resolution adequacy
     # ------------------------------------------------------------------
-    def check_resolution(self, shape: Tuple[int, int]) -> str:
+    def check_resolution(self, shape: tuple[int, int]) -> str:
         """Return 'adequate' | 'low' based on the shorter image dimension.
 
         :param shape: (height, width) from a BGR/grayscale numpy array.

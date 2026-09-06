@@ -1,17 +1,16 @@
 """PDF report renderer using ReportLab."""
 import io
 import os
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from app.report import ReportData, _format_date_value, _format_nutrition_table
-
+from app.report import ReportData, _format_date_value
 
 _DASH = "\u2014"
 
@@ -137,7 +136,7 @@ def render_pdf(report: ReportData) -> bytes:
             if f.extracted_value and isinstance(f.extracted_value, dict) and f.extracted_value.get("present"):
                 story.append(Paragraph(f"  Value: \"{f.extracted_value.get('text', '')}\"", body_style))
             else:
-                story.append(Paragraph(f"  Value: Not present", body_style))
+                story.append(Paragraph("  Value: Not present", body_style))
         # Default: standard value display
         else:
             story.append(Paragraph(f"  Value: {f.display_value}", body_style))

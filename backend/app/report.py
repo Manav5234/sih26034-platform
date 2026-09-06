@@ -3,7 +3,7 @@
 One source of truth for report content; two renderers consume the same
 assembled data structure.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -11,17 +11,14 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.db.models import (
-    Scan as ScanDB,
-    Declaration as DeclDB,
-    Evidence as EvDB,
-    Inspection as InspectionDB,
-    InspectionLocation as InspectionLocationDB,
-    Product as ProdDB,
-    Image as ImageDB,
     Officer as OfficerDB,
-    VerificationState,
 )
-
+from app.db.models import (
+    Product as ProdDB,
+)
+from app.db.models import (
+    Scan as ScanDB,
+)
 
 _MONTH_NAMES = {
     1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
@@ -75,7 +72,7 @@ def _format_value(field_name: str, value: Any) -> str:
     return str(value)
 
 
-def _format_nutrition_table(nutrients: List[Dict[str, Any]]) -> str:
+def _format_nutrition_table(nutrients: list[dict[str, Any]]) -> str:
     """Format nutrition facts list as a readable table string."""
     if not nutrients:
         return "\u2014"
@@ -99,29 +96,29 @@ class FieldReport:
     verdict: str
     reason: str
     confidence: float
-    rule_id: Optional[str]
-    evidence: List[Dict[str, Any]]
-    officer_correction: Optional[Dict[str, Any]] = None
-    ai_verdict: Optional[str] = None
-    ai_reason: Optional[str] = None
+    rule_id: str | None
+    evidence: list[dict[str, Any]]
+    officer_correction: dict[str, Any] | None = None
+    ai_verdict: str | None = None
+    ai_reason: str | None = None
 
 
 @dataclass
 class LocationReport:
     latitude: float
     longitude: float
-    accuracy_meters: Optional[float]
+    accuracy_meters: float | None
     source: str
-    address_text: Optional[str]
+    address_text: str | None
     captured_at: str
 
 
 @dataclass
 class InspectionReport:
     officer_name: str
-    actions: List[Dict[str, Any]]
-    notes: Optional[str]
-    location: Optional[LocationReport]
+    actions: list[dict[str, Any]]
+    notes: str | None
+    location: LocationReport | None
     created_at: str
 
 
@@ -129,12 +126,12 @@ class InspectionReport:
 class ReportData:
     scan_id: str
     generated_at: str
-    product: Optional[Dict[str, Any]]
-    images: List[Dict[str, Any]]
-    fields: List[FieldReport]
-    inspections: List[InspectionReport]
-    overall_status: Optional[str]
-    summary: Dict[str, int]
+    product: dict[str, Any] | None
+    images: list[dict[str, Any]]
+    fields: list[FieldReport]
+    inspections: list[InspectionReport]
+    overall_status: str | None
+    summary: dict[str, int]
 
 
 def assemble_report(scan_id: UUID, db: Session) -> ReportData:

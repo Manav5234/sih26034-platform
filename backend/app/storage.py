@@ -6,8 +6,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from uuid import uuid4
 
-import shutil
-
 UPLOAD_ROOT = Path("/data/uploads")
 
 

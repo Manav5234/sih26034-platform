@@ -1,9 +1,11 @@
-from sqlalchemy import Column, String, Float, DateTime, Date, ForeignKey, Text, Enum as SAEnum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import DeclarativeBase, relationship
-import uuid
 import enum
+import uuid
 from datetime import datetime, timezone
+
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import DeclarativeBase, relationship
 
 
 class Base(DeclarativeBase):

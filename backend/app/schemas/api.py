@@ -1,19 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.declaration import Declaration
 from app.schemas.enums import ScanStatus, VerificationState
 from app.schemas.evidence import Evidence
-from app.schemas.declaration import Declaration
-from app.schemas.scan import Scan, ImageInfo
-from app.schemas.inspection import Inspection
-from app.schemas.product import CanonicalProduct
-from app.schemas.rule import RuleSet
-from app.schemas.officer import Officer
 
 
 class HealthResponse(BaseModel):
@@ -31,14 +26,14 @@ class ImageUploadResponse(BaseModel):
 
 
 class ScanEvidenceGroup(BaseModel):
-    declaration_id: Optional[UUID] = None
+    declaration_id: UUID | None = None
     field_name: str
-    evidence: List[Evidence]
+    evidence: list[Evidence]
 
 
 class ScanComplianceResponse(BaseModel):
-    declarations: List[Declaration]
-    overall_status: Optional[VerificationState] = None
+    declarations: list[Declaration]
+    overall_status: VerificationState | None = None
 
 
 class DashboardResponse(BaseModel):
@@ -54,19 +49,19 @@ class DashboardResponse(BaseModel):
 
 class ProductListItem(BaseModel):
     id: UUID
-    identity: Optional[str] = None
-    brand: Optional[str] = None
-    category: Optional[str] = None
-    manufacturer: Optional[str] = None
-    barcode_code: Optional[str] = None
-    mrp_amount: Optional[float] = None
-    latest_scan_status: Optional[str] = None
+    identity: str | None = None
+    brand: str | None = None
+    category: str | None = None
+    manufacturer: str | None = None
+    barcode_code: str | None = None
+    mrp_amount: float | None = None
+    latest_scan_status: str | None = None
     total_scans: int = 0
     created_at: datetime
 
 
 class PaginatedProducts(BaseModel):
-    items: List[ProductListItem]
+    items: list[ProductListItem]
     total: int
     page: int
     page_size: int
@@ -75,16 +70,16 @@ class PaginatedProducts(BaseModel):
 class ScanListItem(BaseModel):
     id: UUID
     status: str
-    overall_status: Optional[str] = None
-    product_name: Optional[str] = None
-    barcode: Optional[str] = None
+    overall_status: str | None = None
+    product_name: str | None = None
+    barcode: str | None = None
     has_inspection: bool = False
     declarations_count: int = 0
     created_at: datetime
 
 
 class PaginatedScans(BaseModel):
-    items: List[ScanListItem]
+    items: list[ScanListItem]
     total: int
     page: int
     page_size: int
@@ -94,14 +89,14 @@ class InspectionListItem(BaseModel):
     id: UUID
     scan_id: UUID
     officer_id: UUID
-    officer_name: Optional[str] = None
+    officer_name: str | None = None
     actions_count: int = 0
-    notes: Optional[str] = None
+    notes: str | None = None
     created_at: datetime
 
 
 class PaginatedInspections(BaseModel):
-    items: List[InspectionListItem]
+    items: list[InspectionListItem]
     total: int
     page: int
     page_size: int

@@ -1,7 +1,9 @@
 import Link from "next/link";
 
+import { getServerApiUrl } from "@/lib/config";
+
 async function getHealth() {
-  const apiUrl = process.env.API_URL || "http://localhost:8000";
+  const apiUrl = getServerApiUrl();
   const res = await fetch(`${apiUrl}/health`, {
     cache: "no-store",
   });

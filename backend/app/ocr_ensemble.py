@@ -16,10 +16,9 @@ providers, different preprocessing variants).  Key design goals:
 from __future__ import annotations
 
 import logging
-import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +44,14 @@ class OCREvidence:
             (e.g. "near_MRP", "above_quantity", "label_MFD").
     """
     text: str
-    bbox: List[float]
+    bbox: list[float]
     confidence: float
     source_provider: str
-    image_id: Optional[str] = None
+    image_id: str | None = None
     preprocessing_variant: str = "single_pass"
-    context_hints: List[str] = field(default_factory=list)
+    context_hints: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dict compatible with existing extraction code.
 
         Note: Only core keys (text, bbox, confidence, source_provider,
@@ -79,7 +78,7 @@ def _normalize_text_for_comparison(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
-def _bbox_iou(box_a: List[float], box_b: List[float]) -> float:
+def _bbox_iou(box_a: list[float], box_b: list[float]) -> float:
     """Intersection-over-union of two [x, y, w, h] boxes."""
     ax, ay, aw, ah = box_a
     bx, by, bw, bh = box_b
@@ -144,11 +143,11 @@ def _get_preprocessing(line):
 
 
 def generate_field_candidates(
-    ocr_lines: List[Dict],
+    ocr_lines: list[dict],
     field_name: str,
     source_provider: str,
-    image_id: Optional[str] = None,
-) -> List[OCREvidence]:
+    image_id: str | None = None,
+) -> list[OCREvidence]:
     """Generate field-specific candidates from OCR lines.
 
     For each field type (mrp, net_quantity, manufacturer, etc.), scan
@@ -169,7 +168,7 @@ def generate_field_candidates(
         List of OCREvidence candidates, each with full provenance.
         May be empty if no relevant lines found.
     """
-    candidates: List[OCREvidence] = []
+    candidates: list[OCREvidence] = []
 
     for line in ocr_lines:
         text = _get_text(line).strip()
@@ -275,8 +274,8 @@ def generate_field_candidates(
 
 
 def ensemble_ocr_evidence(
-    all_candidates: Dict[str, List[OCREvidence]],
-) -> Dict[str, Dict[str, Any]]:
+    all_candidates: dict[str, list[OCREvidence]],
+) -> dict[str, dict[str, Any]]:
     """Produce a unified OCR evidence set from candidates across providers/variants.
 
     Args:
@@ -313,7 +312,7 @@ def ensemble_ocr_evidence(
         (fuse_field in fusion.py) will see both candidates and can decide
         based on contextual evidence.
     """
-    results: Dict[str, Dict[str, Any]] = {}
+    results: dict[str, dict[str, Any]] = {}
 
     for field_name, candidates in all_candidates.items():
         if not candidates:

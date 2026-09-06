@@ -6,7 +6,6 @@ __pycache__/
 
 # Frontend
 node_modules/
-/frontend/package-lock.json
 /frontend/.next/
 
 # Docker

@@ -13,9 +13,10 @@ for the field-level fusion layer to resolve.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -116,10 +117,10 @@ class OCROErrorNormalization:
             for the normalization decisions.
     """
     original_text: str
-    normalized_variants: List[Tuple[str, float]] = field(default_factory=list)
-    context_hints: List[str] = field(default_factory=list)
+    normalized_variants: list[tuple[str, float]] = field(default_factory=list)
+    context_hints: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "original_text": self.original_text,
             "normalized_variants": self.normalized_variants,
@@ -159,8 +160,8 @@ def normalize_ocr_text(
         variants with confidence penalties, and context hints.
     """
     original = text.strip()
-    variants: List[Tuple[str, float]] = [(original, 0.0)]  # (variant_text, confidence_penalty)
-    hints: List[str] = []
+    variants: list[tuple[str, float]] = [(original, 0.0)]  # (variant_text, confidence_penalty)
+    hints: list[str] = []
 
     # Determine substitution conservatism based on evidence tier
     # Tier 1-2: conservative (fewer substitutions, higher confidence)
@@ -259,7 +260,7 @@ def normalize_ocr_text(
 
 
 def _should_substitute(
-    rule: Dict[str, str],
+    rule: dict[str, str],
     text: str,
     field_context: str,
     conservative: bool,
@@ -363,10 +364,10 @@ def _has_rupee_currency(text: str) -> bool:
 
 
 def apply_ocr_normalization(
-    extracted_value: Dict[str, Any],
+    extracted_value: dict[str, Any],
     field_name: str,
     evidence_tier: int = 4,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Apply OCR error normalization to an extracted value.
 
     This function takes the result from an extraction function and generates

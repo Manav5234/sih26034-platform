@@ -12,7 +12,7 @@ from app.schemas.evidence import Evidence
 
 class OfficerCorrection(BaseModel):
     officer_id: UUID
-    officer_name: Optional[str] = None
+    officer_name: str | None = None
     corrected_value: Any
     reason: str
     corrected_at: datetime
@@ -23,9 +23,9 @@ class Declaration(BaseModel):
     scan_id: UUID
     field_name: str
     extracted_value: Any
-    evidence: List[Evidence]
-    rule_id: Optional[str] = None
+    evidence: list[Evidence]
+    rule_id: str | None = None
     verdict: VerificationState
     reason: str
     confidence: float
-    officer_correction: Optional[OfficerCorrection] = None
+    officer_correction: OfficerCorrection | None = None

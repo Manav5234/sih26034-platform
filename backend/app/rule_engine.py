@@ -7,14 +7,19 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.db.models import (
     Declaration as DeclDB,
+)
+from app.db.models import (
     Rule as RuleDB,
+)
+from app.db.models import (
     RuleSet as RuleSetDB,
+)
+from app.db.models import (
     VerificationState,
 )
 
@@ -61,7 +66,7 @@ def select_ruleset(
 # Structured validation_conditions interpreter
 # ---------------------------------------------------------------------------
 
-def _check_numeric(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
+def _check_numeric(value: Any, conditions: dict[str, Any]) -> str | None:
     """Check a numeric extracted_value against format constraints."""
     amount = None
     if isinstance(value, dict):
@@ -79,7 +84,7 @@ def _check_numeric(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _check_quantity(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
+def _check_quantity(value: Any, conditions: dict[str, Any]) -> str | None:
     """Check a quantity_with_unit extracted_value."""
     if not isinstance(value, dict):
         return "value is not a quantity object"
@@ -103,7 +108,7 @@ def _check_quantity(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _check_text(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
+def _check_text(value: Any, conditions: dict[str, Any]) -> str | None:
     """Check a text extracted_value."""
     text = str(value).strip() if value is not None else ""
 
@@ -116,7 +121,7 @@ def _check_text(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _check_date(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
+def _check_date(value: Any, conditions: dict[str, Any]) -> str | None:
     """Check a date extracted_value."""
     if value is None:
         return "date value is missing"
@@ -140,7 +145,7 @@ def _check_date(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _check_nutrition_panel(value: Any, conditions: Dict[str, Any]) -> Optional[str]:
+def _check_nutrition_panel(value: Any, conditions: dict[str, Any]) -> str | None:
     """Check a nutrition_facts extracted_value."""
     if value is None:
         return "nutrition panel not found"
@@ -167,8 +172,8 @@ _FORMAT_CHECKERS = {
 def validate_conditions(
     extracted_value: Any,
     confidence: float,
-    conditions: Dict[str, Any],
-) -> Tuple[bool, Optional[str]]:
+    conditions: dict[str, Any],
+) -> tuple[bool, str | None]:
     """Evaluate extracted_value + confidence against structured conditions.
 
     Returns (passed: bool, reason: str | None).
@@ -201,10 +206,10 @@ def validate_conditions(
 # ---------------------------------------------------------------------------
 
 def _evaluate_declaration(
-    decl: Optional[DeclDB],
+    decl: DeclDB | None,
     rule: RuleDB,
-    product_category: Optional[str],
-) -> Tuple[VerificationState, str, Optional[float]]:
+    product_category: str | None,
+) -> tuple[VerificationState, str, float | None]:
     """Evaluate a single declaration against a rule.
 
     Returns (verdict, reason, confidence).
@@ -259,7 +264,7 @@ _SEVERITY = {
 }
 
 
-def _worst(statuses: List[VerificationState]) -> VerificationState:
+def _worst(statuses: list[VerificationState]) -> VerificationState:
     """Return the most severe status, ignoring NOT_APPLICABLE."""
     relevant = [s for s in statuses if s != VerificationState.NOT_APPLICABLE]
     if not relevant:
@@ -280,10 +285,10 @@ class RuleEngine:
 
     def evaluate(
         self,
-        declarations: List[DeclDB],
+        declarations: list[DeclDB],
         inspection_date: date,
-        product_category: Optional[str] = None,
-    ) -> Tuple[VerificationState, List[Dict[str, Any]]]:
+        product_category: str | None = None,
+    ) -> tuple[VerificationState, list[dict[str, Any]]]:
         """Evaluate all declarations against the matching rule set.
 
         Returns (overall_status, per_declaration_results).
@@ -292,8 +297,8 @@ class RuleEngine:
         ruleset = select_ruleset(self.db, self.jurisdiction, inspection_date)
         rules_by_field = {r.required_declaration: r for r in ruleset.rules}
 
-        results: List[Dict[str, Any]] = []
-        verdicts: List[VerificationState] = []
+        results: list[dict[str, Any]] = []
+        verdicts: list[VerificationState] = []
 
         for rule in ruleset.rules:
             # Find matching declaration by field_name

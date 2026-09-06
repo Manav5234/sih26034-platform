@@ -12,9 +12,8 @@ false-conflict.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 # Tolerance for numeric comparison (±1% covers price rounding differences)
 _NUMERIC_TOLERANCE = 0.01
@@ -108,8 +107,8 @@ class FusionResult:
     fused_value: Any = None
     fused_confidence: float = 0.0
     status: str = "missing"  # "agreed" | "conflict" | "missing"
-    sources: List[Dict] = field(default_factory=list)
-    conflict_values: List[Any] = field(default_factory=list)
+    sources: list[dict] = field(default_factory=list)
+    conflict_values: list[Any] = field(default_factory=list)
 
 
 def fuse_field(
@@ -124,8 +123,8 @@ def fuse_field(
     Returns a FusionResult with the fused value, confidence, status,
     and all source values for the evidence trail.
     """
-    sources: List[Dict] = []
-    conflict_values: List[Any] = []
+    sources: list[dict] = []
+    conflict_values: list[Any] = []
 
     has_ocr = ocr_value is not None
     has_provider = provider_value is not None

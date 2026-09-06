@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import List, Dict
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,9 @@ logger.info("pytesseract initialised at module level")
 
 
 def _normalize_result(
-    text: str, bbox: List[float], confidence: float,
+    text: str, bbox: list[float], confidence: float,
     source_provider: str = "tesseract", preprocessing_variant: str = "single_pass",
-) -> Dict:
+) -> dict:
     """Normalise a single OCR result to a consistent schema."""
     return {
         "text": text.strip() if text else "",
@@ -35,7 +35,7 @@ def _normalize_result(
     }
 
 
-def run_ocr(image_path: str) -> Dict[str, List[Dict]]:
+def run_ocr(image_path: str) -> dict[str, list[dict]]:
     """Run OCR on an image file and return both per-token and per-line results.
 
     Returns a dict with two keys:
@@ -66,7 +66,7 @@ def run_ocr(image_path: str) -> Dict[str, List[Dict]]:
     )
 
     # --- per-token results (same as 7a) ---
-    tokens: List[Dict] = []
+    tokens: list[dict] = []
     n = len(data["level"])
     for i in range(n):
         text = data["text"][i].strip()
@@ -95,12 +95,12 @@ def run_ocr(image_path: str) -> Dict[str, List[Dict]]:
         })
 
     # --- group tokens into lines ---
-    line_groups: Dict[tuple, List[Dict]] = defaultdict(list)
+    line_groups: dict[tuple, list[dict]] = defaultdict(list)
     for t in tokens:
         key = (t["block_num"], t["par_num"], t["line_num"])
         line_groups[key].append(t)
 
-    lines: List[Dict] = []
+    lines: list[dict] = []
     for key in sorted(line_groups.keys()):
         group = sorted(line_groups[key], key=lambda t: t["left"])
 

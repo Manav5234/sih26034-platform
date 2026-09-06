@@ -14,14 +14,13 @@ cross-checking evidence (product name, brand, quantity, category).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
-from typing import Dict, Optional
-from datetime import datetime, timezone
-
 import urllib.request
-import json
+from datetime import datetime, timezone
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,7 @@ class _BaseAdapter:
 
     name: str = "base"
 
-    def lookup(self, barcode: str) -> Optional[Dict]:
+    def lookup(self, barcode: str) -> dict | None:
         """Return normalized product dict or None if not found.
 
         Returned dict shape:
@@ -49,7 +48,7 @@ class _BaseAdapter:
         """
         raise NotImplementedError
 
-    def _get_json(self, url: str, timeout: int = 10) -> Optional[dict]:
+    def _get_json(self, url: str, timeout: int = 10) -> dict | None:
         """Fetch JSON from a URL with timeout and error handling."""
         try:
             req = urllib.request.Request(url, headers={
@@ -63,7 +62,7 @@ class _BaseAdapter:
             logger.warning("%s: request failed for %s: %s", self.name, url, e)
             return None
 
-    def _parse_quantity(self, text: str) -> Optional[Dict]:
+    def _parse_quantity(self, text: str) -> dict | None:
         """Parse '500 g', '250 ml', '1 L' etc. into {"value": float, "unit": str}."""
         if not text:
             return None
@@ -86,14 +85,14 @@ class OpenFoodFactsAdapter(_BaseAdapter):
 
     name = "openfoodfacts"
 
-    def lookup(self, barcode: str) -> Optional[Dict]:
+    def lookup(self, barcode: str) -> dict | None:
         data = self._get_json(f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json")
         if not data or data.get("status") != 1:
             logger.info("%s: not found for barcode %s", self.name, barcode)
             return None
 
         product = data.get("product", {})
-        result: Dict = {}
+        result: dict = {}
 
         if product.get("product_name"):
             result["name"] = product["product_name"]
@@ -123,7 +122,7 @@ class UPCitemdbAdapter(_BaseAdapter):
 
     name = "upcitemdb"
 
-    def lookup(self, barcode: str) -> Optional[Dict]:
+    def lookup(self, barcode: str) -> dict | None:
         api_key = os.environ.get("UPCITEMDB_API_KEY", "")
         if not api_key:
             logger.info("%s: no UPCITEMDB_API_KEY set, skipping", self.name)
@@ -155,7 +154,7 @@ class UPCitemdbAdapter(_BaseAdapter):
             return None
 
         item = items[0]
-        result: Dict = {}
+        result: dict = {}
 
         if item.get("title"):
             result["name"] = item["title"]
@@ -186,7 +185,7 @@ class GS1GepirAdapter(_BaseAdapter):
 
     name = "gs1gepir"
 
-    def lookup(self, barcode: str) -> Optional[Dict]:
+    def lookup(self, barcode: str) -> dict | None:
         # GS1 GEPIR lookup URL — returns HTML search results
         url = f"https://gepir.gs1.org/index.php/search-by-gtin?q={barcode}"
         try:
@@ -240,7 +239,7 @@ class ProductLookupAdapter:
     """
 
     @staticmethod
-    def lookup(barcode: str, db=None) -> Optional[Dict]:
+    def lookup(barcode: str, db=None) -> dict | None:
         """Look up product data by barcode.
 
         Args:

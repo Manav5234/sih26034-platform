@@ -1,34 +1,56 @@
-from datetime import date, datetime, timezone, timedelta
-from collections import defaultdict
 import time as _time
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Depends, Request
+import cv2
+import numpy as np
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
-from app.auth import create_access_token, get_current_officer, require_role, verify_password, _DUMMY_BCRYPT_HASH
-from app.config import settings
-from app.db.models import (
-    Officer as OfficerDB,
-    Product as ProdDB,
-    Scan as ScanDB,
-    Image as ImageDB,
-    Declaration as DeclDB,
-    Evidence as EvDB,
-    ComplianceResult as CRDB,
-    Inspection as InspectionDB,
-    InspectionLocation as InspectionLocationDB,
-    AuditLog as AuditLogDB,
-    VerificationState,
-    ScanStatus,
+from app.auth import (
+    _DUMMY_BCRYPT_HASH,
+    create_access_token,
+    get_current_officer,
+    verify_password,
 )
 from app.database import engine
-from app.storage import storage
+from app.db.models import (
+    AuditLog as AuditLogDB,
+)
+from app.db.models import (
+    Declaration as DeclDB,
+)
+from app.db.models import (
+    Evidence as EvDB,
+)
+from app.db.models import (
+    Image as ImageDB,
+)
+from app.db.models import (
+    Inspection as InspectionDB,
+)
+from app.db.models import (
+    InspectionLocation as InspectionLocationDB,
+)
+from app.db.models import (
+    Officer as OfficerDB,
+)
+from app.db.models import (
+    Product as ProdDB,
+)
+from app.db.models import (
+    Scan as ScanDB,
+)
+from app.db.models import (
+    ScanStatus,
+    VerificationState,
+)
+from app.image_quality import ImageQualityAnalyzer
 from app.pipeline import run_pipeline
-
 from app.schemas.api import (
     AuthLoginRequest,
     AuthLoginResponse,
@@ -36,6 +58,7 @@ from app.schemas.api import (
     DashboardResponse,
     HealthResponse,
     ImageUploadResponse,
+    InspectionListItem,
     PaginatedInspections,
     PaginatedProducts,
     PaginatedScans,
@@ -44,19 +67,27 @@ from app.schemas.api import (
     ScanCreateResponse,
     ScanEvidenceGroup,
     ScanListItem,
-    InspectionListItem,
 )
 from app.schemas.declaration import Declaration
-from app.schemas.enums import (
-    OfficerRole,
-)
 from app.schemas.evidence import Evidence
 from app.schemas.geometry import BBox
-from app.schemas.inspection import Inspection, InspectionAction, InspectionRequest, InspectionLocationOut
-from app.schemas.officer import Officer
-from app.schemas.product import CanonicalProduct, Barcode, Dates, MRP, Quantity, UnitSalePrice
-from app.schemas.rule import Rule, RuleSet
+from app.schemas.inspection import (
+    Inspection,
+    InspectionAction,
+    InspectionLocationOut,
+    InspectionRequest,
+)
+from app.schemas.product import (
+    MRP,
+    Barcode,
+    CanonicalProduct,
+    Dates,
+    Quantity,
+    UnitSalePrice,
+)
+from app.schemas.rule import RuleSet
 from app.schemas.scan import ImageInfo, ImageQuality, Scan
+from app.storage import storage
 
 app = FastAPI(title="SIH26034 Legal Metrology Compliance Platform")
 
@@ -236,7 +267,7 @@ async def create_scan(
         db.add(scan)
         db.flush()
 
-        image_ids: List[UUID] = []
+        image_ids: list[UUID] = []
         for label, img, raw in [("front", front, front_bytes), ("back", back, back_bytes)]:
             url = storage.save(str(scan_id), img.filename or f"{label}.jpg", raw)
             img_row = ImageDB(id=uuid4(), scan_id=scan_id, url=url, label=label)
@@ -299,7 +330,7 @@ def get_scan(scan_id: UUID):
 
 
 @app.post("/scan/{scan_id}/images", response_model=ImageUploadResponse)
-async def upload_image(scan_id: UUID, images: List[UploadFile] = File(...)):
+async def upload_image(scan_id: UUID, images: list[UploadFile] = File(...)):
     with Session(engine) as db:
         scan = db.get(ScanDB, scan_id)
         if not scan:
@@ -332,7 +363,7 @@ def reanalyze_scan(scan_id: UUID):
     return ScanCreateResponse(scan_id=scan_id, status=ScanStatus.PROCESSING)
 
 
-@app.get("/scan/{scan_id}/evidence", response_model=List[ScanEvidenceGroup])
+@app.get("/scan/{scan_id}/evidence", response_model=list[ScanEvidenceGroup])
 def get_scan_evidence(scan_id: UUID):
     with Session(engine) as db:
         scan = db.get(ScanDB, scan_id)
@@ -402,11 +433,11 @@ def get_scan_compliance(scan_id: UUID):
 
 @app.get("/scans", response_model=PaginatedScans)
 def list_scans(
-    status: Optional[str] = None,
-    date_from: Optional[date] = None,
-    date_to: Optional[date] = None,
-    officer_id: Optional[UUID] = None,
-    barcode: Optional[str] = None,
+    status: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    officer_id: UUID | None = None,
+    barcode: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _officer: OfficerDB = Depends(get_current_officer),
@@ -663,11 +694,11 @@ def create_inspection(
 
 @app.get("/inspections", response_model=PaginatedInspections)
 def list_inspections(
-    status: Optional[str] = None,
-    officer_id: Optional[UUID] = None,
-    scan_id: Optional[UUID] = None,
-    date_from: Optional[date] = None,
-    date_to: Optional[date] = None,
+    status: str | None = None,
+    officer_id: UUID | None = None,
+    scan_id: UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _officer: OfficerDB = Depends(get_current_officer),
@@ -721,14 +752,13 @@ def list_inspections(
 
 @app.get("/products", response_model=PaginatedProducts)
 def list_products(
-    search: Optional[str] = None,
-    brand: Optional[str] = None,
-    category: Optional[str] = None,
+    search: str | None = None,
+    brand: str | None = None,
+    category: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _officer: OfficerDB = Depends(get_current_officer),
 ):
-    from sqlalchemy import func, case
     with Session(engine) as db:
         q = db.query(ScanDB.product_id).distinct().subquery()
         product_ids = [r[0] for r in db.query(q).all() if r[0] is not None]
@@ -830,7 +860,6 @@ def get_product(product_id: UUID):
 
 @app.get("/dashboard", response_model=DashboardResponse)
 def get_dashboard(officer: OfficerDB = Depends(get_current_officer)):
-    from datetime import timedelta
     with Session(engine) as db:
         now = datetime.now(timezone.utc)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -839,7 +868,6 @@ def get_dashboard(officer: OfficerDB = Depends(get_current_officer)):
         total = db.query(ScanDB).count()
 
         # Pending review = scans with 0 inspections
-        from sqlalchemy import func, literal_column
         scans_with_inspection = (
             db.query(InspectionDB.scan_id)
             .distinct()
@@ -891,7 +919,7 @@ def get_dashboard(officer: OfficerDB = Depends(get_current_officer)):
 # ---------------------------------------------------------------------------
 
 @app.get("/rules", response_model=RuleSet)
-def get_rules(effective_date: Optional[date] = None):
+def get_rules(effective_date: date | None = None):
     raise HTTPException(404, "No active rule set")
 
 
@@ -933,7 +961,7 @@ def download_report_pdf(scan_id: UUID, officer: OfficerDB = Depends(get_current_
         try:
             report_data = assemble_report(scan_id, db)
         except ValueError as e:
-            raise HTTPException(404, str(e))
+            raise HTTPException(404, str(e)) from e
 
         pdf_bytes = render_pdf(report_data)
 
@@ -965,7 +993,7 @@ def download_report_docx(scan_id: UUID, officer: OfficerDB = Depends(get_current
         try:
             report_data = assemble_report(scan_id, db)
         except ValueError as e:
-            raise HTTPException(404, str(e))
+            raise HTTPException(404, str(e)) from e
 
         docx_bytes = render_docx(report_data)
 

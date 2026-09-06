@@ -2,10 +2,10 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
-const API_URL = process.env.API_URL || "http://localhost:8000";
+import { getServerApiUrl } from "@/lib/config";
 
 async function getDashboard(token: string) {
-  const res = await fetch(`${API_URL}/dashboard`, {
+  const res = await fetch(`${getServerApiUrl()}/dashboard`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });

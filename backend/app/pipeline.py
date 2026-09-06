@@ -9,11 +9,10 @@ Multi-image pipeline (Phase 15):
   6. Per-field evidence fusion (OCR + provider)
   7. Rule engine evaluation on fused declarations
 """
+import logging
 import math
 import os
 import tempfile
-import logging
-
 import uuid
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,26 +20,42 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 from sqlalchemy.orm import Session
 
+from app.barcode import BarcodeDecoder
 from app.db.models import (
-    Image as ImageDB,
-    Declaration as DeclDB,
-    Evidence as EvDB,
     ComplianceResult as CRDB,
-    Product as ProdDB,
-    NutritionFact as NFDB,
+)
+from app.db.models import (
+    Declaration as DeclDB,
+)
+from app.db.models import (
+    Evidence as EvDB,
+)
+from app.db.models import (
     EvidenceSourceType,
     VerificationState,
 )
+from app.db.models import (
+    Image as ImageDB,
+)
+from app.db.models import (
+    NutritionFact as NFDB,
+)
+from app.db.models import (
+    Product as ProdDB,
+)
+from app.extraction import (
+    extract_cautions,
+    extract_expiry_date,
+    extract_manufacture_date,
+    extract_manufacturer,
+    extract_mrp,
+    extract_net_quantity,
+    extract_nutrition_facts,
+)
+from app.fusion import fuse_field
 from app.image_quality import ImageQualityAnalyzer
 from app.ocr import run_ocr
-from app.extraction import (
-    extract_mrp, extract_net_quantity, extract_manufacturer,
-    extract_manufacture_date, extract_expiry_date,
-    extract_nutrition_facts, extract_cautions,
-)
-from app.barcode import BarcodeDecoder
 from app.product_lookup import ProductLookupAdapter
-from app.fusion import fuse_field
 from app.rule_engine import RuleEngine
 
 logger = logging.getLogger(__name__)
@@ -55,7 +70,7 @@ _MIN_CONFIDENCE = 0.6
 # Panel-aware search order (Step 4e)
 # Controls which image is searched FIRST. If the field is found on the
 # "wrong" panel, it's still accepted — search order is advisory, not restrictive.
-PANEL_SEARCH_ORDER: Dict[str, List[str]] = {
+PANEL_SEARCH_ORDER: dict[str, list[str]] = {
     "mrp":             ["front", "back"],
     "net_quantity":    ["front", "back"],
     "brand":           ["front", "back"],
@@ -68,8 +83,8 @@ PANEL_SEARCH_ORDER: Dict[str, List[str]] = {
 
 
 def _compare_dates_chronologically(
-    mfd_value: Optional[Dict], exp_value: Optional[Dict]
-) -> Optional[str]:
+    mfd_value: dict | None, exp_value: dict | None
+) -> str | None:
     """Compare manufacture vs expiry date at shared granularity.
 
     Returns "ok", "conflict", or "incomparable" if dates can't be compared.
@@ -127,7 +142,7 @@ def _needs_recrop(image_quality: dict, mrp: Any, nq: Any, mf: Any) -> bool:
 
 def _generate_ocr_variants(
     image_path: str, image_quality: dict
-) -> List[Tuple[str, str]]:
+) -> list[tuple[str, str]]:
     """Generate selected OCR preprocessing variants based on quality metrics.
 
     Returns list of (variant_image_path, variant_name) tuples.
@@ -146,7 +161,7 @@ def _generate_ocr_variants(
     import cv2
     import numpy as np
 
-    variants: List[Tuple[str, str]] = []
+    variants: list[tuple[str, str]] = []
 
     # Always include original image
     variants.append((image_path, "original"))
@@ -235,7 +250,7 @@ def _generate_ocr_variants(
     return variants
 
 
-def _bottom_crop_ocr(image_path: str) -> List[Dict]:
+def _bottom_crop_ocr(image_path: str) -> list[dict]:
     """Crop the bottom third of the image, upscale 2x, and run OCR."""
     img = cv2.imread(image_path)
     if img is None:
@@ -262,7 +277,7 @@ def _bottom_crop_ocr(image_path: str) -> List[Dict]:
             pass
 
 
-def _resolve_images(scan_id: uuid.UUID, image_ids: List[uuid.UUID], db: Session) -> List[Dict]:
+def _resolve_images(scan_id: uuid.UUID, image_ids: list[uuid.UUID], db: Session) -> list[dict]:
     """Resolve image IDs to paths with labels.
 
     Returns list of {"id": UUID, "path": str, "label": "front"|"back"} dicts.
@@ -304,7 +319,7 @@ def _needs_recrop(image_quality: dict, mrp: Any, nq: Any, mf: Any) -> bool:
 def _generate_ocr_variants_with_results(
     image_path: str, image_quality: dict,
     provider_result_fn
-) -> List[Dict]:
+) -> list[dict]:
     """Run OCR on selected preprocessing variants and merge results.
 
     Args:
@@ -316,12 +331,11 @@ def _generate_ocr_variants_with_results(
     their preprocessing_variant.  Variants that fail to process are silently
     skipped.
     """
-    import cv2
 
     # Generate selected variants based on quality metrics
     variants = _generate_ocr_variants(image_path, image_quality)
 
-    merged_lines: List[Dict] = []
+    merged_lines: list[dict] = []
     seen_texts: set = set()  # simple dedup by text
 
     for variant_path, variant_name in variants:
@@ -350,7 +364,7 @@ def _generate_ocr_variants_with_results(
     return merged_lines
 
 
-def _apply_ocr_normalization(lines: List[Dict]) -> List[Dict]:
+def _apply_ocr_normalization(lines: list[dict]) -> list[dict]:
     """Apply OCR error normalization to produce normalized variants.
 
     Generates context-dependent character substitutions (₹↔€, O↔0, I↔1,
@@ -359,7 +373,7 @@ def _apply_ocr_normalization(lines: List[Dict]) -> List[Dict]:
     """
     from app.ocr_normalization import normalize_ocr_text
 
-    normalized_lines: List[Dict] = []
+    normalized_lines: list[dict] = []
     for line in lines:
         text = line.get("text", "")
         orig_conf = line.get("confidence", 1.0)
@@ -383,7 +397,7 @@ def _apply_ocr_normalization(lines: List[Dict]) -> List[Dict]:
     return normalized_lines
 
 
-def _ocr_with_recrop(image_path: str, image_quality: dict) -> List[Dict]:
+def _ocr_with_recrop(image_path: str, image_quality: dict) -> list[dict]:
     """Run OCR with optional multi-pass preprocessing variants.
 
     Runs OCR with selected preprocessing variants (based on quality metrics)
@@ -411,7 +425,7 @@ def _ocr_with_recrop(image_path: str, image_quality: dict) -> List[Dict]:
     # Build candidates dict for the ensemble: field_name → list of OCREvidence
     # We convert the normalized lines (which are dicts) to OCREvidence candidates
     # using generate_field_candidates for each relevant field.
-    all_candidates: Dict[str, List[Any]] = {
+    all_candidates: dict[str, list[Any]] = {
         "mrp": [],
         "net_quantity": [],
         "manufacturer": [],
@@ -476,13 +490,13 @@ def _ocr_with_recrop(image_path: str, image_quality: dict) -> List[Dict]:
                     ct = cl.get("text", "").strip().lower()
                     if ct and not any(ol.get("text", "").strip().lower() == ct for ol in ocr_lines):
                         ocr_lines.append(cl)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Bottom crop OCR failed for %s: %s", image_path, e)
 
     return ocr_lines
 
 
-def _deduplicate_barcodes(all_barcodes: List[Dict]) -> Tuple[List[Dict], List[str]]:
+def _deduplicate_barcodes(all_barcodes: list[dict]) -> tuple[list[dict], list[str]]:
     """Deduplicate barcodes across images.
 
     Returns (deduplicated_barcodes, warnings).
@@ -493,7 +507,7 @@ def _deduplicate_barcodes(all_barcodes: List[Dict]) -> Tuple[List[Dict], List[st
         return [], []
 
     # Group by decoded data value
-    by_value: Dict[str, List[Dict]] = {}
+    by_value: dict[str, list[dict]] = {}
     for bc in all_barcodes:
         val = bc["data"]
         if val not in by_value:
@@ -529,11 +543,11 @@ def _deduplicate_barcodes(all_barcodes: List[Dict]) -> Tuple[List[Dict], List[st
 
 def run_pipeline(
     scan_id: uuid.UUID,
-    image_ids: List[uuid.UUID],
+    image_ids: list[uuid.UUID],
     db: Session,
-    inspection_date: Optional[date] = None,
-    product_category: Optional[str] = None,
-) -> Tuple[dict, List[DeclDB], VerificationState, List[EvDB], Optional[uuid.UUID]]:
+    inspection_date: date | None = None,
+    product_category: str | None = None,
+) -> tuple[dict, list[DeclDB], VerificationState, list[EvDB], uuid.UUID | None]:
     """Return (image_quality_dict, declarations, overall_status, barcode_evidence, product_id).
 
     Multi-image pipeline:
@@ -574,7 +588,7 @@ def run_pipeline(
 
     # ── Step 3: OCR — per image ──
     # Store per-image OCR results for panel-aware extraction in Round 2
-    ocr_by_label: Dict[str, List[Dict]] = {}
+    ocr_by_label: dict[str, list[dict]] = {}
     for img in images:
         ocr_lines = _ocr_with_recrop(img["path"], image_quality.get(img["label"], {}))
         ocr_by_label[img["label"]] = ocr_lines
@@ -588,7 +602,7 @@ def run_pipeline(
     # ── Step 3a: Panel-aware extraction ──
     # Extract fields using panel-aware search order.
     # Search order is advisory: if found on the "wrong" panel, still accepted.
-    def _extract_with_panel_order(field_name: str, extract_fn, all_lines: List[Dict], ocr_by: Dict[str, List[Dict]]):
+    def _extract_with_panel_order(field_name: str, extract_fn, all_lines: list[dict], ocr_by: dict[str, list[dict]]):
         """Run extraction with panel-aware search order."""
         order = PANEL_SEARCH_ORDER.get(field_name, ["front", "back"])
         for label in order:
@@ -610,7 +624,7 @@ def run_pipeline(
     nutrition_list = extract_nutrition_facts(all_ocr_lines)
 
     # ── Step 4: Barcode / QR detection — per image ──
-    all_barcodes: List[Dict] = []
+    all_barcodes: list[dict] = []
     for img in images:
         try:
             decoder = BarcodeDecoder()
@@ -618,12 +632,12 @@ def run_pipeline(
             for bc in barcodes:
                 bc["source_image"] = img["label"]
             all_barcodes.extend(barcodes)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Barcode decode failed for %s: %s", img["path"], e)
 
     barcodes, barcode_warnings = _deduplicate_barcodes(all_barcodes)
 
-    barcode_evidence: List[EvDB] = []
+    barcode_evidence: list[EvDB] = []
     for bc in barcodes:
         source_type = EvidenceSourceType.QR if bc["format"] == "QRCODE" else EvidenceSourceType.BARCODE
         raw_text = f'{bc["format"]}: {bc["data"]}'
@@ -654,8 +668,8 @@ def run_pipeline(
         barcode_evidence.append(ev)
 
     # ── Step 5: Provider lookup by decoded barcode ──
-    provider_data: Optional[Dict] = None
-    barcode_value: Optional[str] = None
+    provider_data: dict | None = None
+    barcode_value: str | None = None
     for bc in barcodes:
         if bc["format"] != "QRCODE":
             barcode_value = bc["data"]
@@ -664,7 +678,7 @@ def run_pipeline(
                 break
 
     # Persist product record
-    product_id: Optional[uuid.UUID] = None
+    product_id: uuid.UUID | None = None
     if barcode_value:
         existing = db.query(ProdDB).filter(ProdDB.barcode_code == barcode_value).first()
         if existing:
@@ -707,7 +721,7 @@ def run_pipeline(
     fused_nq = fuse_field("net_quantity", ocr_nq, ocr_nq_conf, prov_nq, 1.0)
     fused_mf = fuse_field("manufacturer", ocr_mf, ocr_mf_conf, prov_mf, 1.0)
 
-    declarations: List[DeclDB] = []
+    declarations: list[DeclDB] = []
 
     # Map field names to their source image IDs
     field_source_images = {
@@ -738,7 +752,7 @@ def run_pipeline(
         if src_img_id is None and images:
             src_img_id = images[0]["id"]
 
-        evidence_entries: List[EvDB] = []
+        evidence_entries: list[EvDB] = []
         for src in fusion.sources:
             ev = EvDB(
                 id=uuid.uuid4(),
@@ -810,7 +824,7 @@ def run_pipeline(
         if src_img_id is None and images:
             src_img_id = images[0]["id"]
 
-        evidence_entries: List[EvDB] = []
+        evidence_entries: list[EvDB] = []
         if extracted:
             raw = extracted.get("raw_text", "")
             conf = extracted.get("confidence", 0.0)
@@ -857,7 +871,7 @@ def run_pipeline(
                 conflict_ev = EvDB(
                     id=uuid.uuid4(),
                     source_type=EvidenceSourceType.OCR,
-                    raw_text=f"Chronological conflict: expiry date is before manufacture date",
+                    raw_text="Chronological conflict: expiry date is before manufacture date",
                     confidence=1.0,
                     image_id=None,
                     bbox=None,
@@ -867,7 +881,7 @@ def run_pipeline(
                 )
                 decl.evidence.append(conflict_ev)
                 decl.verdict = VerificationState.CONFLICT
-                decl.reason = f"expiry date is chronologically before manufacture date"
+                decl.reason = "expiry date is chronologically before manufacture date"
 
     # ── Step 6d: Cautions declaration ──
     caution_decl_id = uuid.uuid4()
@@ -880,7 +894,7 @@ def run_pipeline(
     if caution_src_img_id is None and images:
         caution_src_img_id = images[0]["id"]
 
-    caution_evidence: List[EvDB] = []
+    caution_evidence: list[EvDB] = []
     if caution_result and caution_result.get("present"):
         caution_ev = EvDB(
             id=uuid.uuid4(),
@@ -933,7 +947,7 @@ def run_pipeline(
     if nutrition_src_img_id is None and images:
         nutrition_src_img_id = images[0]["id"]
 
-    nutrition_evidence: List[EvDB] = []
+    nutrition_evidence: list[EvDB] = []
     if nutrition_list:
         # Overall verdict: SATISFIED if any nutrient extracted, NOT_VERIFIED otherwise
         has_nutrition = any(n.get("value") is not None for n in nutrition_list)

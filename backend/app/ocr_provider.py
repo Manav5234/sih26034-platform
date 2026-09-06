@@ -8,9 +8,8 @@ provider-specific output is never exposed to extraction.py.
 
 from __future__ import annotations
 
-import abc
 import logging
-from typing import List, Dict, Optional, Protocol, runtime_checkable
+from typing import Dict, List, Optional, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +27,10 @@ class OCRToken:
     def __init__(
         self,
         text: str,
-        bbox: List[float],
+        bbox: list[float],
         confidence: float,
         source_provider: str,
-        image_id: Optional[str] = None,
+        image_id: str | None = None,
         preprocessing_variant: str = "single_pass",
     ):
         self.text = text
@@ -41,7 +40,7 @@ class OCRToken:
         self.image_id = image_id
         self.preprocessing_variant = preprocessing_variant  # "original", "upscaled", "contrast", etc.
 
-    def to_dict(self) -> Dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dict compatible with existing extraction code."""
         return {
             "text": self.text,
@@ -64,10 +63,10 @@ class OCRLine:
     def __init__(
         self,
         text: str,
-        bbox: List[float],
+        bbox: list[float],
         confidence: float,
         source_provider: str,
-        image_id: Optional[str] = None,
+        image_id: str | None = None,
         preprocessing_variant: str = "single_pass",
     ):
         self.text = text
@@ -77,7 +76,7 @@ class OCRLine:
         self.image_id = image_id
         self.preprocessing_variant = preprocessing_variant
 
-    def to_dict(self) -> Dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dict compatible with existing extraction code."""
         return {
             "text": self.text,
@@ -105,7 +104,7 @@ class OCRProvider(Protocol):
         self,
         image_path: str,
         variant: str = "single_pass",
-    ) -> Dict[str, List[Dict]]:
+    ) -> dict[str, list[dict]]:
         """Run OCR on *image_path* and return {"tokens": [...], "lines": [...]}.
 
         The returned dicts contain the normalized contract keys:
@@ -143,7 +142,7 @@ class TesseractProvider:
         self,
         image_path: str,
         variant: str = "single_pass",
-    ) -> Dict[str, List[Dict]]:
+    ) -> dict[str, list[dict]]:
         """Run Tesseract OCR and return normalized token/line results."""
         from app.ocr import run_ocr as _run_ocr
 
@@ -151,14 +150,14 @@ class TesseractProvider:
 
         # Normalize tokens into OCRToken objects, then back to dicts
         # with source_provider and preprocessing_variant set.
-        normalized_tokens: List[Dict] = []
+        normalized_tokens: list[dict] = []
         for t in raw.get("tokens", []):
             d = t.copy()  # preserve existing keys
             d["source_provider"] = "tesseract"
             d["preprocessing_variant"] = variant
             normalized_tokens.append(d)
 
-        normalized_lines: List[Dict] = []
+        normalized_lines: list[dict] = []
         for l in raw.get("lines", []):
             d = l.copy()
             d["source_provider"] = "tesseract"
@@ -202,7 +201,7 @@ class PaddleOCRProvider:
         self,
         image_path: str,
         variant: str = "single_pass",
-    ) -> Dict[str, List[Dict]]:
+    ) -> dict[str, list[dict]]:
         """Run PaddleOCR and return normalized token/line results."""
         if self._engine is None:
             # Fallback to Tesseract when PaddleOCR not available
@@ -234,10 +233,10 @@ class PaddleOCRProvider:
 # Provider registry — default chain: PaddleOCR primary, Tesseract fallback
 # ---------------------------------------------------------------------------
 
-_PROVIDER_CHAIN: List[OCRProvider] = [PaddleOCRProvider(), TesseractProvider()]
+_PROVIDER_CHAIN: list[OCRProvider] = [PaddleOCRProvider(), TesseractProvider()]
 
 
-def get_provider_chain() -> List[OCRProvider]:
+def get_provider_chain() -> list[OCRProvider]:
     """Return the default provider chain (PaddleOCR primary, Tesseract fallback)."""
     return _PROVIDER_CHAIN
 
@@ -245,8 +244,8 @@ def get_provider_chain() -> List[OCRProvider]:
 def run_ocr_with_provider(
     image_path: str,
     variant: str = "single_pass",
-    provider_chain: Optional[List[OCRProvider]] = None,
-) -> Dict[str, List[Dict]]:
+    provider_chain: list[OCRProvider] | None = None,
+) -> dict[str, list[dict]]:
     """Run OCR through the provider chain, returning the first successful result.
 
     Tries each provider in order.  The first provider to not return empty
@@ -255,7 +254,7 @@ def run_ocr_with_provider(
     if provider_chain is None:
         provider_chain = _PROVIDER_CHAIN
 
-    last_error: Optional[str] = None
+    last_error: str | None = None
     for provider in provider_chain:
         try:
             result = provider.extract(image_path, variant=variant)

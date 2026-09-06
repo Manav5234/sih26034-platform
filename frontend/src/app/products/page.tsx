@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { getApiUrl } from "@/lib/config";
 
 interface ProductItem {
   id: string;
@@ -46,7 +46,7 @@ export default function ProductsPage() {
       if (search) params.set("search", search);
       if (brand) params.set("brand", brand);
       if (category) params.set("category", category);
-      const res = await fetch(`${API}/products?${params}`, {
+      const res = await fetch(`${getApiUrl()}/products?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {

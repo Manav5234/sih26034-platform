@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import List, Dict
+from typing import Dict, List
 
 import cv2
 from pyzbar import pyzbar  # type: ignore
@@ -40,7 +40,7 @@ def _classify_payload(data: str) -> str:
     return "plain_text"
 
 
-def _polygon_to_bbox(points) -> Dict[str, float]:
+def _polygon_to_bbox(points) -> dict[str, float]:
     """Convert pyzbar polygon points to {x, y, width, height}."""
     xs = [p.x for p in points]
     ys = [p.y for p in points]
@@ -57,7 +57,7 @@ def _polygon_to_bbox(points) -> Dict[str, float]:
 class BarcodeDecoder:
     """Decode barcodes and QR codes from an image file."""
 
-    def decode(self, image_path: str) -> List[Dict]:
+    def decode(self, image_path: str) -> list[dict]:
         """Run pyzbar on *image_path* and return normalised results.
 
         Each result dict contains:
@@ -73,7 +73,7 @@ class BarcodeDecoder:
             return []
 
         decoded = pyzbar.decode(img)
-        results: List[Dict] = []
+        results: list[dict] = []
 
         for obj in decoded:
             data = obj.data.decode("utf-8", errors="replace")

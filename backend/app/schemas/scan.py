@@ -6,14 +6,14 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.schemas.enums import ScanStatus, VerificationState
 from app.schemas.declaration import Declaration
+from app.schemas.enums import ScanStatus, VerificationState
 
 
 class ImageInfo(BaseModel):
     id: UUID
     url: str
-    label: Optional[str] = None
+    label: str | None = None
     uploaded_at: datetime
 
 
@@ -27,11 +27,11 @@ class ImageQuality(BaseModel):
 
 class Scan(BaseModel):
     id: UUID
-    product_id: Optional[UUID] = None
+    product_id: UUID | None = None
     status: ScanStatus
-    images: List[ImageInfo]
-    image_quality: Optional[Dict[str, ImageQuality]] = None
-    compliance_results: List[Declaration]
-    overall_status: Optional[VerificationState] = None
-    warnings: List[str]
+    images: list[ImageInfo]
+    image_quality: dict[str, ImageQuality] | None = None
+    compliance_results: list[Declaration]
+    overall_status: VerificationState | None = None
+    warnings: list[str]
     created_at: datetime

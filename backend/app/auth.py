@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db.models import Officer as OfficerDB
-from app.database import engine
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
@@ -41,8 +40,9 @@ def create_access_token(officer_id: UUID, role: str) -> str:
 
 
 def _get_current_officer(
-    token: Optional[str] = Depends(oauth2_scheme),
-    token_cookie: Optional[str] = Cookie(None, alias="access_token"),
+    token: str | None = Depends(oauth2_scheme),
+    token_cookie: str | None = Cookie(None, alias="access_token"),
+    db: Session = Depends(get_db),
 ) -> OfficerDB:
     # Accept token from Authorization header OR httpOnly cookie
     raw = token or token_cookie
@@ -53,14 +53,13 @@ def _get_current_officer(
         payload = jwt.decode(raw, settings.jwt_secret, algorithms=[ALGORITHM])
         officer_id = UUID(payload["sub"])
         role = payload["role"]
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from e
 
-    with Session(engine) as db:
-        officer = db.get(OfficerDB, officer_id)
-        if officer is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Officer not found")
-        return officer
+    officer = db.get(OfficerDB, officer_id)
+    if officer is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Officer not found")
+    return officer
 
 
 def get_current_officer(officer: OfficerDB = Depends(_get_current_officer)) -> OfficerDB:

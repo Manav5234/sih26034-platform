@@ -1,11 +1,11 @@
 """DOCX report renderer using python-docx."""
 import io
+
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt, RGBColor
 
-from app.report import ReportData, _format_value, _format_date_value
-
+from app.report import ReportData, _format_date_value, _format_value
 
 _DASH = "\u2014"
 

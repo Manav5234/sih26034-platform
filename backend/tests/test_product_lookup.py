@@ -28,28 +28,59 @@ def db_session():
     session.close()
 
 
+# Sample fixture for a successful OpenFoodFacts lookup
+FAKE_OFFFOODS_RESPONSE = {
+    "status": 1,
+    "product": {
+        "product_name": "Coca-Cola Zero Sugar",
+        "brands": "Coca-Cola",
+        "categories": "soft drinks",
+        "manufacturers": "The Coca-Cola Company",
+        "quantity": "500 mL"
+    }
+}
+
+# Sample fixture for a not-found barcode
+FAKE_OFFFOODS_NOT_FOUND = {"status": 0, "message": "Product not found"}
+
+
 # ---------------------------------------------------------------------------
-# 1. OpenFoodFacts real barcode test
+# 1. OpenFoodFacts mocked test
 # ---------------------------------------------------------------------------
 
-class TestOpenFoodFactsReal:
-    """Test with a real barcode against OpenFoodFacts."""
+# Mock response for a successful OpenFoodFacts lookup
+FAKE_OFFFOODS_RESPONSE = {
+    "status": 1,
+    "product": {
+        "product_name": "Coca-Cola Zero Sugar",
+        "brands": "Coca-Cola",
+        "categories": "soft drinks",
+        "manufacturers": "The Coca-Cola Company",
+        "quantity": "500 mL"
+    }
+}
+
+
+class TestOpenFoodFactsMocked:
+    """Test with mocked OpenFoodFacts responses — fully offline and deterministic."""
 
     # Coca-Cola Zero Sugar — confirmed present on OpenFoodFacts
     REAL_BARCODE = "0049000042566"
 
-    def test_real_barcode_found_on_openfoodfacts(self):
-        """Real product should be found on Open Food Facts."""
+    def test_mocked_barcode_found(self):
+        """Mocked product should be found on Open Food Facts."""
         adapter = OpenFoodFactsAdapter()
-        result = adapter.lookup(self.REAL_BARCODE)
+        with patch.object(OpenFoodFactsAdapter, "_get_json", return_value=FAKE_OFFFOODS_RESPONSE):
+            result = adapter.lookup(self.REAL_BARCODE)
         assert result is not None, f"Expected product to be found (barcode {self.REAL_BARCODE})"
         assert result.get("name") is not None
         assert "coca" in result.get("name", "").lower() or "cola" in result.get("name", "").lower()
 
-    def test_openfoodfacts_returns_normalized_shape(self):
+    def test_mocked_returns_normalized_shape(self):
         """Returned dict should match the expected normalized shape."""
         adapter = OpenFoodFactsAdapter()
-        result = adapter.lookup(self.REAL_BARCODE)
+        with patch.object(OpenFoodFactsAdapter, "_get_json", return_value=FAKE_OFFFOODS_RESPONSE):
+            result = adapter.lookup(self.REAL_BARCODE)
         assert result is not None
         # Must have at least one of: name, brand, category, manufacturer
         assert any(result.get(k) for k in ["name", "brand", "category", "manufacturer"])
@@ -111,14 +142,11 @@ class TestCache:
         db_session.flush()
 
         # First lookup — should call OpenFoodFacts
-        adapter = OpenFoodFactsAdapter()
-        mock_get = MagicMock(side_effect=adapter._get_json)
-
-        with patch.object(OpenFoodFactsAdapter, "_get_json", mock_get):
+        with patch.object(OpenFoodFactsAdapter, "_get_json", return_value=FAKE_OFFFOODS_RESPONSE):
             result1 = ProductLookupAdapter.lookup(self.BARCODE, db=db_session)
 
         # Second lookup — should NOT call any external API (cache hit)
-        with patch.object(OpenFoodFactsAdapter, "_get_json", MagicMock()) as mock_get2:
+        with patch.object(OpenFoodFactsAdapter, "_get_json", return_value=FAKE_OFFFOODS_RESPONSE) as mock_get2:
             result2 = ProductLookupAdapter.lookup(self.BARCODE, db=db_session)
 
         assert result2 is not None, "Cache should return previously stored result"
@@ -132,7 +160,8 @@ class TestCache:
 
         barcode = "0000000000000"
         # First lookup
-        ProductLookupAdapter.lookup(barcode, db=db_session)
+        with patch.object(OpenFoodFactsAdapter, "_get_json", return_value=FAKE_OFFFOODS_NOT_FOUND):
+            ProductLookupAdapter.lookup(barcode, db=db_session)
         # Should be cached as not-found
         cached = db_session.query(ProductCache).filter(ProductCache.barcode == barcode).first()
         assert cached is not None
@@ -145,17 +174,18 @@ class TestCache:
 
 
 # ---------------------------------------------------------------------------
-# 4. Evidence fusion with real data (integration test)
+# 4. Evidence fusion with mocked data
 # ---------------------------------------------------------------------------
 
 class TestFusionIntegration:
-    """Verify that a real product lookup result integrates into evidence."""
+    """Verify that a mocked product lookup result integrates into evidence."""
 
     def test_pipeline_product_lookup_returns_normalized_data(self):
-        """A real OpenFoodFacts lookup should return data in the shape
+        """A mocked OpenFoodFacts lookup should return data in the shape
         the pipeline expects (name, brand, category, manufacturer)."""
         adapter = OpenFoodFactsAdapter()
-        result = adapter.lookup("0049000042566")  # Coca-Cola
+        with patch.object(OpenFoodFactsAdapter, "_get_json", return_value=FAKE_OFFFOODS_RESPONSE):
+            result = adapter.lookup("0049000042566")  # Coca-Cola
         assert result is not None
         # Pipeline accesses these keys:
         assert "name" in result or "brand" in result
