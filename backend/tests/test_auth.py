@@ -132,7 +132,7 @@ def test_malformed_token_rejected():
     from app.auth import _get_current_officer
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as exc_info:
-        _get_current_officer(token="not-a-real-token", token_cookie=None)
+        _get_current_officer(token="not-a-real-token", token_cookie=None, db=MagicMock())
     assert exc_info.value.status_code == 401
 
 
@@ -140,7 +140,7 @@ def test_empty_token_rejected():
     from app.auth import _get_current_officer
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as exc_info:
-        _get_current_officer(token=None, token_cookie=None)
+        _get_current_officer(token=None, token_cookie=None, db=MagicMock())
     assert exc_info.value.status_code == 401
 
 
@@ -160,7 +160,7 @@ def test_expired_token_rejected(admin_officer):
     token = jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
     with pytest.raises(HTTPException) as exc_info:
-        _get_current_officer(token=token, token_cookie=None)
+        _get_current_officer(token=token, token_cookie=None, db=MagicMock())
     assert exc_info.value.status_code == 401
 
 
@@ -181,7 +181,7 @@ def test_token_for_nonexistent_officer_rejected(db_session):
     token = jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
     with pytest.raises(HTTPException) as exc_info:
-        _get_current_officer(token=token, token_cookie=None)
+        _get_current_officer(token=token, token_cookie=None, db=db_session)
     assert exc_info.value.status_code == 401
     assert "not found" in exc_info.value.detail.lower()
 
@@ -225,10 +225,7 @@ def test_token_from_cookie_accepted(admin_officer, db_session):
     mock_session = MagicMock()
     mock_session.get.return_value = admin_officer
 
-    with patch("app.auth.Session") as MockSession:
-        MockSession.return_value.__enter__ = MagicMock(return_value=mock_session)
-        MockSession.return_value.__exit__ = MagicMock(return_value=False)
-        officer = _get_current_officer(token=None, token_cookie=token)
+    officer = _get_current_officer(token=None, token_cookie=token, db=mock_session)
     assert officer.id == admin_officer.id
 
 
@@ -243,8 +240,5 @@ def test_token_from_header_accepted(admin_officer, db_session):
     mock_session = MagicMock()
     mock_session.get.return_value = admin_officer
 
-    with patch("app.auth.Session") as MockSession:
-        MockSession.return_value.__enter__ = MagicMock(return_value=mock_session)
-        MockSession.return_value.__exit__ = MagicMock(return_value=False)
-        officer = _get_current_officer(token=token, token_cookie=None)
+    officer = _get_current_officer(token=token, token_cookie=None, db=mock_session)
     assert officer.id == admin_officer.id
