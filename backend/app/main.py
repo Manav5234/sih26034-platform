@@ -99,13 +99,14 @@ from app.schemas.product import (
 )
 from app.schemas.rule import RuleSet
 from app.schemas.scan import ImageInfo, ImageQuality, Scan
+from app.config import settings
 from app.storage import storage
 
 app = FastAPI(title="SIH26034 Legal Metrology Compliance Platform")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
