@@ -8,7 +8,6 @@ on a numpy array (grayscale or BGR) and returns a descriptive label.
 from __future__ import annotations
 
 import math
-from typing import Tuple
 
 import cv2
 import numpy as np

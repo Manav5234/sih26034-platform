@@ -13,7 +13,7 @@ false-conflict.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 # Tolerance for numeric comparison (±1% covers price rounding differences)
 _NUMERIC_TOLERANCE = 0.01
