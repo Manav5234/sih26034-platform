@@ -26,10 +26,33 @@ curl http://localhost:8000/health
 
 ## Development
 
-```bash
-# Backend
-cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload
+**For active frontend development**, use `docker compose watch` which auto-rebuilds on file changes:
 
-# Frontend
+```bash
+docker compose watch
+```
+
+This runs Next.js dev server with hot-reload and mounts your source files directly into the container.
+
+**For backend development**, run directly on host (no Docker):
+
+```bash
+cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload
+```
+
+**For local frontend development** (without Docker):
+
+```bash
 cd frontend && npm install && npm run dev
 ```
+
+## Important: Production Build vs Dev Mode
+
+- `docker compose up` builds a **frozen production image** — code changes require `--build`:
+  ```bash
+  docker compose up --build   # rebuild after every code change
+  ```
+
+- `docker compose watch` runs **dev mode** with hot-reload — no rebuild needed for frontend changes.
+
+- **Never** use `docker compose up` (without `--build`) when actively editing frontend code — the container will serve stale code from the last image build.

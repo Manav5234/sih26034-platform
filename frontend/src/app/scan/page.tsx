@@ -24,7 +24,7 @@ export default function ScanUploadPage() {
       if (!file) return;
       try {
         const form = new FormData();
-        form.append("image", file);
+        form.append("file", file);
         const res = await fetch(`${API}/quality`, {
           method: "POST",
           body: form,
@@ -37,7 +37,7 @@ export default function ScanUploadPage() {
             if (typeof err.detail === "string") {
               msg = err.detail;
             } else if (Array.isArray(err.detail)) {
-              msg = err.detail.length > 0 ? err.detail[0] || "Quality check failed" : "Quality check failed";
+              msg = err.detail.length > 0 ? err.detail[0]?.msg || "Quality check failed" : "Quality check failed";
             } else if (typeof err.detail === "object") {
               msg = err.detail.msg || err.detail.message || "Quality check failed";
             }
