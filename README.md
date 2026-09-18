@@ -4,6 +4,43 @@ A compliance platform for Legal Metrology: officers photograph product labels, t
 declarations (MRP, net quantity, dates, …) via OCR, checks them against Legal Metrology rules, and the
 frontend reviews scans, flags, and reports.
 
+## Getting the code
+
+**If you already have push access to this repo** (ask a maintainer to add you as a collaborator
+if you're on the team but haven't been added yet):
+
+```bash
+git clone https://github.com/Manav5234/sih26034-platform.git
+cd sih26034-platform
+```
+
+**If you don't have push access** (e.g. contributing from outside the core team), fork first:
+
+1. Click **Fork** on [github.com/Manav5234/sih26034-platform](https://github.com/Manav5234/sih26034-platform)
+   to create your own copy under your GitHub account.
+2. Clone your fork, not the original:
+   ```bash
+   git clone https://github.com/YOUR-USERNAME/sih26034-platform.git
+   cd sih26034-platform
+   ```
+3. Add the original repo as a second remote so you can pull in updates later:
+   ```bash
+   git remote add upstream https://github.com/Manav5234/sih26034-platform.git
+   ```
+4. When you want to open a PR, push to **your fork** (`origin`) instead of `origin main` on the
+   original repo, then open the PR from your fork's branch against `Manav5234/sih26034-platform`'s
+   `main` branch — GitHub does this automatically when you click "Compare & pull request" from
+   your fork.
+5. To keep your fork up to date with the original later:
+   ```bash
+   git checkout main
+   git fetch upstream
+   git merge upstream/main
+   git push origin main
+   ```
+
+Once you have the code on disk either way, continue with Prerequisites below.
+
 ## Prerequisites
 
 - **Docker + Docker Compose** — any recent Docker Desktop (verified with Docker 29 / Compose v5).

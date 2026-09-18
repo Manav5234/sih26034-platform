@@ -4,6 +4,11 @@ Step-by-step for opening a pull request, assuming you have never done one before
 
 ## 1. One-time setup
 
+This guide assumes you already have the code cloned (see the README's "Getting the code" section
+for the clone-vs-fork decision) and are pushing directly to branches on this repo. If you're
+working from a fork instead, push to your fork's `origin` and open the PR from there against this
+repo's `main` — GitHub's "Compare & pull request" banner handles this automatically either way.
+
 1. Clone the repo and follow the [README](README.md) to install everything.
 2. Confirm the app works **before touching any code**:
    ```bash
