@@ -44,6 +44,9 @@ export default async function DashboardPage() {
             <Link href="/products" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">
               Products
             </Link>
+            <Link href="/rules" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">
+              Rules
+            </Link>
             <Link href="/scan" className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
               New Scan
             </Link>
@@ -76,6 +79,10 @@ export default async function DashboardPage() {
           <Link href="/flags" className="rounded-xl bg-white p-5 shadow hover:shadow-md transition">
             <h2 className="text-sm font-semibold text-slate-700">Consumer Flags</h2>
             <p className="mt-1 text-xs text-slate-400">Review consumer-reported issues</p>
+          </Link>
+          <Link href="/rules" className="rounded-xl bg-white p-5 shadow hover:shadow-md transition">
+            <h2 className="text-sm font-semibold text-slate-700">Legal Metrology Rules</h2>
+            <p className="mt-1 text-xs text-slate-400">View active rulesets and declarations</p>
           </Link>
         </div>
       </div>
