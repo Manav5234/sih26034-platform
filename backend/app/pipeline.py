@@ -416,39 +416,6 @@ def _ocr_with_recrop(image_path: str, image_quality: dict) -> list[dict]:
     # Apply OCR error normalization to produce variants with confidence penalties
     ocr_lines = _apply_ocr_normalization(ocr_lines)
 
-    # Integrate OCR ensemble — produce unified evidence set from all candidates
-    # across providers and preprocessing variants.  This preserves ALL candidates
-    # (never silently drops lower-confidence ones) and flags conflicts for
-    # the fusion layer to resolve.
-    from app.ocr_ensemble import ensemble_ocr_evidence, generate_field_candidates
-
-    # Build candidates dict for the ensemble: field_name → list of OCREvidence
-    # We convert the normalized lines (which are dicts) to OCREvidence candidates
-    # using generate_field_candidates for each relevant field.
-    all_candidates: dict[str, list[Any]] = {
-        "mrp": [],
-        "net_quantity": [],
-        "manufacturer": [],
-        "manufacture_date": [],
-        "expiry_date": [],
-        "cautions": [],
-        "nutrition_facts": [],
-    }
-
-    # Convert each line to OCREvidence and generate field-specific candidates
-    for line in ocr_lines:
-        source_provider = line.get("source_provider", "tesseract")
-
-        # Generate candidates for each field using the ensemble helper
-        for field_name in all_candidates.keys():
-            field_candidates = generate_field_candidates(
-                [line], field_name, source_provider,
-            )
-            all_candidates[field_name].extend(field_candidates)
-
-    # Run the ensemble to produce unified evidence
-    ensemble_ocr_evidence(all_candidates)
-
     # Extract current fields to decide if additional variants are needed
     mrp = extract_mrp(ocr_lines) if ocr_lines else None
     nq = extract_net_quantity(ocr_lines) if ocr_lines else None
@@ -594,6 +561,32 @@ def run_pipeline(
     for label in ["front", "back"]:
         if label in ocr_by_label:
             all_ocr_lines.extend(ocr_by_label[label])
+    
+    # Build OCR ensemble from ALL OCR passes, variants, and recrops.
+    from app.ocr_ensemble import ensemble_ocr_evidence, generate_field_candidates
+
+    ensemble_candidates: dict[str, list[Any]] = {
+        "mrp": [],
+        "net_quantity": [],
+        "manufacturer": [],
+        "manufacture_date": [],
+        "expiry_date": [],
+        "cautions": [],
+        "nutrition_facts": [],
+    }
+
+    for line in all_ocr_lines:
+        source_provider = line.get("source_provider", "tesseract")
+
+        for field_name in ensemble_candidates:
+            field_candidates = generate_field_candidates(
+                [line],
+                field_name,
+                source_provider,
+            )
+            ensemble_candidates[field_name].extend(field_candidates)
+
+    ocr_ensemble = ensemble_ocr_evidence(ensemble_candidates)
 
     # ponytail: debug OCR logging — prints raw text per panel at INFO level.
     # No new processing, just iterating existing in-memory results.
@@ -619,7 +612,13 @@ def run_pipeline(
         result = extract_fn(all_lines)
         return result, "front"
 
-    mrk, mrp_source_image = _extract_with_panel_order("mrp", extract_mrp, all_ocr_lines, ocr_by_label)
+    mrk, mrp_source_image = _extract_with_panel_order(
+        "mrp", extract_mrp, all_ocr_lines, ocr_by_label
+    )
+
+    if ocr_ensemble["mrp"]["status"] == "conflict":
+        mrp_source_image = "front"
+    
     nq, nq_source_image = _extract_with_panel_order("net_quantity", extract_net_quantity, all_ocr_lines, ocr_by_label)
     mf, mf_source_image = _extract_with_panel_order("manufacturer", extract_manufacturer, all_ocr_lines, ocr_by_label)
     mfd, mfd_source_image = _extract_with_panel_order("manufacture_date", extract_manufacture_date, all_ocr_lines, ocr_by_label)
@@ -711,6 +710,9 @@ def run_pipeline(
     ocr_mf_raw = mf.get("raw_text", "") if mf else ""
 
     ocr_mrp = mrk if mrk else None
+
+    if ocr_ensemble["mrp"]["status"] == "conflict":
+        ocr_mrp = None
     ocr_nq = nq if nq else None
     ocr_mf = mf["name"] if mf else None
     ocr_mrp_conf = mrk["confidence"] if mrk else 0.0
@@ -726,6 +728,11 @@ def run_pipeline(
     fused_mf = fuse_field("manufacturer", ocr_mf, ocr_mf_conf, prov_mf, 1.0)
 
     declarations: list[DeclDB] = []
+    ensemble_conflicts = {
+        field_name
+        for field_name, result in ocr_ensemble.items()
+        if result.get("status") == "conflict"
+    }
 
     # Map field names to their source image IDs
     field_source_images = {
@@ -743,6 +750,9 @@ def run_pipeline(
         ("manufacturer", "LMR-2024-003", fused_mf, ocr_mf_raw),
     ]
 
+    #print("DEBUG OCR ENSEMBLE:", ocr_ensemble)
+    #print("DEBUG ENSEMBLE CONFLICTS:", ensemble_conflicts)
+    
     for field_name, rule_id, fusion, raw_text in field_fusions:
         decl_id = uuid.uuid4()
 
@@ -771,14 +781,30 @@ def run_pipeline(
             )
             evidence_entries.append(ev)
 
-        if fusion.status == "conflict":
+        if field_name in ensemble_conflicts:
+            ensemble_result = ocr_ensemble[field_name]
+
             verdict = VerificationState.CONFLICT
-            reason = f"conflicting evidence for '{field_name}': OCR={ocr_mrp if field_name=='mrp' else ocr_nq if field_name=='net_quantity' else ocr_mf} vs provider={prov_mrp if field_name=='mrp' else prov_nq if field_name=='net_quantity' else prov_mf}"
+            reason = (
+                f"conflicting OCR evidence for '{field_name}': "
+                f"{ensemble_result.get('conflict_info') or ensemble_result.get('candidates')}"
+            )
             extracted_value = None
+
+        elif fusion.status == "conflict":
+            verdict = VerificationState.CONFLICT
+            reason = (
+                f"conflicting evidence for '{field_name}': "
+                f"OCR={ocr_mrp if field_name == 'mrp' else ocr_nq if field_name == 'net_quantity' else ocr_mf} "
+                f"vs provider={prov_mrp if field_name == 'mrp' else prov_nq if field_name == 'net_quantity' else prov_mf}"
+            )
+            extracted_value = None
+
         elif fusion.status == "missing":
             verdict = VerificationState.NOT_VERIFIED
             reason = f"{field_name} not found in any evidence source"
             extracted_value = None
+
         else:
             verdict = VerificationState.SATISFIED
             reason = None
@@ -1016,9 +1042,18 @@ def run_pipeline(
     for decl in declarations:
         r = results_by_field.get(decl.field_name)
         if r:
-            decl.verdict = r["verdict"]
-            decl.reason = r["reason"]
-            decl.confidence = r["confidence"] if r["confidence"] is not None else 0.0
+            if decl.verdict == VerificationState.CONFLICT:
+                # Preserve evidence-level conflicts.
+                # Rule engine must not silently overwrite them.
+                decl.verdict = VerificationState.CONFLICT
+                decl.reason = decl.reason or r["reason"]
+            else:
+                decl.verdict = r["verdict"]
+                decl.reason = r["reason"]
+
+            decl.confidence = (
+                r["confidence"] if r["confidence"] is not None else 0.0
+            )
 
             # For nutrition_facts, store per-nutrient details in compliance_results
             details = {"reason": r["reason"]}
@@ -1033,7 +1068,7 @@ def run_pipeline(
                 id=uuid.uuid4(),
                 declaration_id=decl.id,
                 rule_id=r["rule_id"],
-                status=r["verdict"],
+                status=decl.verdict,
                 details=details,
             )
             decl.compliance_results = [cr]
