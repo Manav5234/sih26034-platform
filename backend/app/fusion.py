@@ -12,8 +12,11 @@ false-conflict.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Tolerance for numeric comparison (±1% covers price rounding differences)
 _NUMERIC_TOLERANCE = 0.01
@@ -49,13 +52,25 @@ def _normalize_net_quantity(value: float, unit: str) -> float:
     return value
 
 
-def _normalize_mrp(value: float, currency: str) -> float:
-    """Normalize MRP to INR for comparison.
+ASSUMED_CURRENCY = "INR"
 
-    This is a stub — real conversion would use live exchange rates.
-    For now, assume all test data is INR.
+
+def _normalize_mrp(value: float, currency: str) -> float:
+    """Normalize MRP using the explicitly configured assumed currency.
+
+    No live currency conversion is performed. If OCR reports a different
+    currency, preserve the value but flag the mismatch so it cannot be
+    silently treated as INR.
     """
-    # Stub: assume INR.  Later, multiply by exchange rate if currency != "INR".
+    normalized_currency = (currency or "").strip().upper()
+
+    if normalized_currency and normalized_currency != ASSUMED_CURRENCY:
+        logger.warning(
+            "MRP currency differs from assumed currency: %s != %s",
+            normalized_currency,
+            ASSUMED_CURRENCY,
+        )
+
     return value
 
 
