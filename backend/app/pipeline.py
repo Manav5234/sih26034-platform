@@ -52,8 +52,9 @@ from app.extraction import (
     extract_net_quantity,
     extract_nutrition_facts,
 )
-from app.fusion import fuse_field
+from app.fusion import FusionResult, fuse_field
 from app.image_quality import ImageQualityAnalyzer
+from app.observability import pipeline_context, timed_stage
 from app.ocr import run_ocr
 from app.product_lookup import ProductLookupAdapter
 from app.rule_engine import RuleEngine
@@ -542,6 +543,26 @@ def run_pipeline(
     db: Session,
     inspection_date: date | None = None,
     product_category: str | None = None,
+    *,
+    request_id: str | None = None,
+) -> tuple[dict, list[DeclDB], VerificationState, list[EvDB], uuid.UUID | None]:
+    """Run the pipeline with request/scan correlation around the existing logic."""
+    with pipeline_context(logger, request_id=request_id, scan_id=str(scan_id)):
+        return _run_pipeline(
+            scan_id,
+            image_ids,
+            db,
+            inspection_date=inspection_date,
+            product_category=product_category,
+        )
+
+
+def _run_pipeline(
+    scan_id: uuid.UUID,
+    image_ids: list[uuid.UUID],
+    db: Session,
+    inspection_date: date | None = None,
+    product_category: str | None = None,
 ) -> tuple[dict, list[DeclDB], VerificationState, list[EvDB], uuid.UUID | None]:
     """Return (image_quality_dict, declarations, overall_status, barcode_evidence, product_id).
 
@@ -558,42 +579,82 @@ def run_pipeline(
         inspection_date = date.today()
 
     # ── Step 1: Resolve images ──
-    images = _resolve_images(scan_id, image_ids, db)
+    with timed_stage(logger, "resolve_images"):
+        images = _resolve_images(scan_id, image_ids, db)
 
     # ── Step 2: Image quality — per image ──
     image_quality = {}
     for img in images:
-        try:
-            bgr = cv2.imread(img["path"])
-            if bgr is not None:
-                analyzer = ImageQualityAnalyzer()
-                sq = analyzer.analyze(bgr)
+        with timed_stage(logger, "image_quality", image_label=img["label"]):
+            try:
+                bgr = cv2.imread(img["path"])
+                if bgr is not None:
+                    analyzer = ImageQualityAnalyzer()
+                    sq = analyzer.analyze(bgr)
+                    image_quality[img["label"]] = {
+                        "blur": sq["blur"],
+                        "glare": sq["glare"],
+                        "perspective": sq["perspective"],
+                        "resolution": sq["resolution"],
+                        "recommended_action": sq["recommended_action"],
+                    }
+            except Exception:
+                logger.exception("image quality analysis failed for %s", img["label"])
                 image_quality[img["label"]] = {
-                    "blur": sq["blur"],
-                    "glare": sq["glare"],
-                    "perspective": sq["perspective"],
-                    "resolution": sq["resolution"],
-                    "recommended_action": sq["recommended_action"],
+                    "blur": "low", "glare": "none", "perspective": "slight_tilt",
+                    "resolution": "adequate", "recommended_action": "proceed",
                 }
-        except Exception:
-            logger.exception("image quality analysis failed for %s", img["label"])
-            image_quality[img["label"]] = {
-                "blur": "low", "glare": "none", "perspective": "slight_tilt",
-                "resolution": "adequate", "recommended_action": "proceed",
-            }
 
     # ── Step 3: OCR — per image ──
     # Store per-image OCR results for panel-aware extraction in Round 2
     ocr_by_label: dict[str, list[dict]] = {}
     for img in images:
-        ocr_lines = _ocr_with_recrop(img["path"], image_quality.get(img["label"], {}))
-        ocr_by_label[img["label"]] = ocr_lines
+        with timed_stage(logger, "ocr", image_label=img["label"]):
+            ocr_lines = _ocr_with_recrop(img["path"], image_quality.get(img["label"], {}))
+            ocr_by_label[img["label"]] = ocr_lines
+        logger.info(
+            "ocr_result",
+            extra={
+                "event": "ocr_result",
+                "stage": "ocr",
+                "image_label": img["label"],
+                "line_count": len(ocr_lines),
+            },
+        )
 
     # Merge all OCR lines for existing extraction functions (they don't know about panels yet)
     all_ocr_lines = []
     for label in ["front", "back"]:
         if label in ocr_by_label:
             all_ocr_lines.extend(ocr_by_label[label])
+    from app.ocr_ensemble import ensemble_ocr_evidence, generate_field_candidates
+    ensemble_fields = (
+        "mrp",
+        "net_quantity",
+        "manufacturer",
+        "manufacture_date",
+        "expiry_date",
+        "cautions",
+        "nutrition_facts",
+    )
+
+    all_candidates = {field_name: [] for field_name in ensemble_fields}
+
+    for label, lines in ocr_by_label.items():
+        for line in lines:
+            source_provider = line.get("source_provider", "tesseract")
+
+            for field_name in ensemble_fields:
+                all_candidates[field_name].extend(
+                    generate_field_candidates(
+                        [line],
+                        field_name,
+                        source_provider,
+                        image_id=label,
+                    )
+                )
+
+    ensemble_results = ensemble_ocr_evidence(all_candidates)
 
     # ponytail: debug OCR logging — prints raw text per panel at INFO level.
     # No new processing, just iterating existing in-memory results.
@@ -619,25 +680,36 @@ def run_pipeline(
         result = extract_fn(all_lines)
         return result, "front"
 
-    mrk, mrp_source_image = _extract_with_panel_order("mrp", extract_mrp, all_ocr_lines, ocr_by_label)
-    nq, nq_source_image = _extract_with_panel_order("net_quantity", extract_net_quantity, all_ocr_lines, ocr_by_label)
-    mf, mf_source_image = _extract_with_panel_order("manufacturer", extract_manufacturer, all_ocr_lines, ocr_by_label)
-    mfd, mfd_source_image = _extract_with_panel_order("manufacture_date", extract_manufacture_date, all_ocr_lines, ocr_by_label)
-    exp, exp_source_image = _extract_with_panel_order("expiry_date", extract_expiry_date, all_ocr_lines, ocr_by_label)
-    caution_result, caution_source_image = _extract_with_panel_order("cautions", lambda lines: extract_cautions(lines), all_ocr_lines, ocr_by_label)
-    nutrition_list = extract_nutrition_facts(all_ocr_lines)
+    with timed_stage(logger, "extraction"):
+        mrk, mrp_source_image = _extract_with_panel_order("mrp", extract_mrp, all_ocr_lines, ocr_by_label)
+        nq, nq_source_image = _extract_with_panel_order("net_quantity", extract_net_quantity, all_ocr_lines, ocr_by_label)
+        mf, mf_source_image = _extract_with_panel_order("manufacturer", extract_manufacturer, all_ocr_lines, ocr_by_label)
+        mfd, mfd_source_image = _extract_with_panel_order("manufacture_date", extract_manufacture_date, all_ocr_lines, ocr_by_label)
+        exp, exp_source_image = _extract_with_panel_order("expiry_date", extract_expiry_date, all_ocr_lines, ocr_by_label)
+        caution_result, caution_source_image = _extract_with_panel_order("cautions", lambda lines: extract_cautions(lines), all_ocr_lines, ocr_by_label)
+        nutrition_list = extract_nutrition_facts(all_ocr_lines)
 
     # ── Step 4: Barcode / QR detection — per image ──
     all_barcodes: list[dict] = []
     for img in images:
-        try:
-            decoder = BarcodeDecoder()
-            barcodes = decoder.decode(img["path"])
-            for bc in barcodes:
-                bc["source_image"] = img["label"]
-            all_barcodes.extend(barcodes)
-        except Exception as e:
-            logger.warning("Barcode decode failed for %s: %s", img["path"], e)
+        with timed_stage(logger, "barcode_decode", image_label=img["label"]):
+            try:
+                decoder = BarcodeDecoder()
+                barcodes = decoder.decode(img["path"])
+                for bc in barcodes:
+                    bc["source_image"] = img["label"]
+                all_barcodes.extend(barcodes)
+                logger.info(
+                    "barcode_result",
+                    extra={
+                        "event": "barcode_result",
+                        "stage": "barcode_decode",
+                        "image_label": img["label"],
+                        "barcode_count": len(barcodes),
+                    },
+                )
+            except Exception as e:
+                logger.warning("Barcode decode failed for %s: %s", img["path"], e)
 
     barcodes, barcode_warnings = _deduplicate_barcodes(all_barcodes)
 
@@ -674,12 +746,13 @@ def run_pipeline(
     # ── Step 5: Provider lookup by decoded barcode ──
     provider_data: dict | None = None
     barcode_value: str | None = None
-    for bc in barcodes:
-        if bc["format"] != "QRCODE":
-            barcode_value = bc["data"]
-            provider_data = ProductLookupAdapter.lookup(bc["data"], db=db)
-            if provider_data:
-                break
+    with timed_stage(logger, "provider_lookup"):
+        for bc in barcodes:
+            if bc["format"] != "QRCODE":
+                barcode_value = bc["data"]
+                provider_data = ProductLookupAdapter.lookup(bc["data"], db=db)
+                if provider_data:
+                    break
 
     # Persist product record
     product_id: uuid.UUID | None = None
@@ -721,10 +794,39 @@ def run_pipeline(
     prov_nq = provider_data.get("net_quantity") if provider_data else None
     prov_mf = provider_data.get("manufacturer") if provider_data else None
 
-    fused_mrp = fuse_field("mrp", ocr_mrp, ocr_mrp_conf, prov_mrp, 1.0)
-    fused_nq = fuse_field("net_quantity", ocr_nq, ocr_nq_conf, prov_nq, 1.0)
-    fused_mf = fuse_field("manufacturer", ocr_mf, ocr_mf_conf, prov_mf, 1.0)
+    with timed_stage(logger, "fusion"):
+        fused_mrp = fuse_field("mrp", ocr_mrp, ocr_mrp_conf, prov_mrp, 1.0)
+        fused_nq = fuse_field("net_quantity", ocr_nq, ocr_nq_conf, prov_nq, 1.0)
+        fused_mf = fuse_field("manufacturer", ocr_mf, ocr_mf_conf, prov_mf, 1.0)
+    def apply_ensemble_conflict(field_name: str, fusion: FusionResult) -> FusionResult:
+        ensemble = ensemble_results[field_name]
 
+        if ensemble["status"] != "conflict":
+            return fusion
+
+        # OCR conflict must never be silently replaced by the panel-order result.
+        fusion.status = "conflict"
+        fusion.fused_value = None
+        fusion.fused_confidence = 0.0
+        fusion.conflict_values = [
+            candidate["text"]
+            for candidate in ensemble["candidates"]
+        ]
+        fusion.sources = [
+            {
+                "source": "ocr",
+                "value": candidate["text"],
+                "confidence": candidate["confidence"],
+                "raw_text": candidate["text"],
+                "preprocessing_variant": candidate["preprocessing_variant"],
+            }
+            for candidate in ensemble["candidates"]
+        ]
+        return fusion
+
+    fused_mrp = apply_ensemble_conflict("mrp", fused_mrp)
+    fused_nq = apply_ensemble_conflict("net_quantity", fused_nq)
+    fused_mf = apply_ensemble_conflict("manufacturer", fused_mf)
     declarations: list[DeclDB] = []
 
     # Map field names to their source image IDs
@@ -761,11 +863,19 @@ def run_pipeline(
             ev = EvDB(
                 id=uuid.uuid4(),
                 source_type=EvidenceSourceType.OCR if src["source"] == "ocr" else EvidenceSourceType.PRODUCT_DATABASE,
-                raw_text=raw_text if src["source"] == "ocr" else f"Provider lookup: {src['source']}",
+                raw_text=(
+                    src.get("raw_text", raw_text)
+                    if src["source"] == "ocr"
+                    else f"Provider lookup: {src['source']}"
+                ),
                 confidence=src["confidence"],
                 image_id=src_img_id,
                 bbox=None,
-                preprocessing_variant="ocr_single_pass" if src["source"] == "ocr" else "provider_lookup",
+                preprocessing_variant=(
+                    src.get("preprocessing_variant", "ocr_single_pass")
+                    if src["source"] == "ocr"
+                    else "provider_lookup"
+                ),
                 extracted_at=_now(),
                 declaration_id=decl_id,
             )
@@ -1009,8 +1119,9 @@ def run_pipeline(
         db.add(nf)
 
     # ── Step 7: Rule engine ──
-    engine = RuleEngine(db)
-    overall, results = engine.evaluate(declarations, inspection_date, product_category)
+    with timed_stage(logger, "rule_evaluation"):
+        engine = RuleEngine(db)
+        overall, results = engine.evaluate(declarations, inspection_date, product_category)
 
     results_by_field = {r["field_name"]: r for r in results}
     for decl in declarations:
@@ -1041,5 +1152,15 @@ def run_pipeline(
     # Merge barcode warnings into image quality if any
     if barcode_warnings:
         image_quality["_barcode_warnings"] = barcode_warnings
+
+    logger.info(
+        "rule_evaluation_result",
+        extra={
+            "event": "rule_evaluation_result",
+            "stage": "rule_evaluation",
+            "declaration_count": len(declarations),
+            "overall_status": overall.value if hasattr(overall, "value") else str(overall),
+        },
+    )
 
     return image_quality, declarations, overall, barcode_evidence, product_id
