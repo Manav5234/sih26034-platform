@@ -1,7 +1,7 @@
 """OCR Provider Abstraction — multi-engine OCR with normalized output.
 
 Defines OCRToken/OCRLine normalized representation and provider interface.
-Both PaddleOCR and Tesseract are normalized into the same schema.
+Both RapidOCR and Tesseract are normalized into the same schema.
 The rest of the pipeline works with the normalized representation only;
 provider-specific output is never exposed to extraction.py.
 """
@@ -36,7 +36,7 @@ class OCRToken:
         self.text = text
         self.bbox = bbox  # [x, y, width, height]
         self.confidence = round(max(confidence, 0.0), 3)
-        self.source_provider = source_provider  # "paddleocr" or "tesseract"
+        self.source_provider = source_provider  # "rapidocr" or "tesseract"
         self.image_id = image_id
         self.preprocessing_variant = preprocessing_variant  # "original", "upscaled", "contrast", etc.
 
@@ -168,32 +168,33 @@ class TesseractProvider:
 
 
 # ---------------------------------------------------------------------------
-# PaddleOCR provider — skeleton; to be filled in Phase 3
+# RapidOCR provider — PaddleOCR models via ONNX Runtime
 # ---------------------------------------------------------------------------
 
-class PaddleOCRProvider:
-    """PaddleOCR provider — primary engine once integrated.
+class RapidOCRProvider:
+    """RapidOCR provider — primary engine.
 
-    To be implemented in Phase 3 after Phase 1 compatibility spike confirms
-    environment stability.  Will normalize PaddleOCR output into the same
-    contract as TesseractProvider.
+    Uses PaddleOCR's own models re-exported to ONNX via rapidocr-onnxruntime.
+    PaddleOCR-level accuracy without the heavy paddlepaddle dependency.
+    Each detected text box is treated as one line (RapidOCR does line-level
+    detection natively).
     """
 
-    name = "paddleocr"
+    name = "rapidocr"
 
     def __init__(self):
-        self._engine = None  # lazily initialized
+        self._engine = None
         self._initialized = False
 
     def _ensure_loaded(self):
-        """Lazy import of PaddleOCR to avoid dependency errors."""
+        """Lazy-import RapidOCR to avoid startup cost if never used."""
         if not self._initialized:
             try:
-                from paddleocr import PaddleOCR  # type: ignore
-                self._engine = PaddleOCR(lang_en=True, use_angle_cls=False, show_log=False)
+                from rapidocr_onnxruntime import RapidOCR
+                self._engine = RapidOCR()
                 self._initialized = True
             except ImportError:
-                logger.warning("PaddleOCR not available — falling back to Tesseract")
+                logger.warning("rapidocr-onnxruntime not available")
                 self._engine = None
                 self._initialized = True
 
@@ -202,42 +203,65 @@ class PaddleOCRProvider:
         image_path: str,
         variant: str = "single_pass",
     ) -> dict[str, list[dict]]:
-        """Run PaddleOCR and return normalized token/line results."""
+        """Run RapidOCR and return normalized token/line results."""
+        self._ensure_loaded()
         if self._engine is None:
-            # Fallback to Tesseract when PaddleOCR not available
-            from app.ocr import run_ocr as _run_ocr
-            raw = _run_ocr(image_path)
-            # Add variant info
-            for t in raw.get("tokens", []):
-                t["source_provider"] = "paddleocr_fallback"
-                t["preprocessing_variant"] = variant
-            for l in raw.get("lines", []):
-                l["source_provider"] = "paddleocr_fallback"
-                l["preprocessing_variant"] = variant
-            return {"tokens": raw.get("tokens", []), "lines": raw.get("lines", [])}
+            return {"tokens": [], "lines": []}
 
-        # TODO: actual PaddleOCR inference in Phase 3
-        # For now, fall back to Tesseract
-        from app.ocr import run_ocr as _run_ocr
-        raw = _run_ocr(image_path)
-        for t in raw.get("tokens", []):
-            t["source_provider"] = "paddleocr"
-            t["preprocessing_variant"] = variant
-        for l in raw.get("lines", []):
-            l["source_provider"] = "paddleocr"
-            l["preprocessing_variant"] = variant
-        return {"tokens": raw.get("tokens", []), "lines": raw.get("lines", [])}
+        try:
+            result, _elapse = self._engine(image_path)
+        except Exception as e:
+            logger.warning("RapidOCR failed for %s: %s", image_path, e)
+            return {"tokens": [], "lines": []}
+
+        if not result:
+            return {"tokens": [], "lines": []}
+
+        tokens: list[dict] = []
+        lines: list[dict] = []
+        for item in result:
+            polygon, text, confidence = item
+            text = text.strip() if text else ""
+            if not text:
+                continue
+
+            # Convert polygon [[x1,y1],[x2,y2],[x3,y3],[x4,y4]] → [x, y, w, h]
+            if not isinstance(polygon, (list, tuple)) or len(polygon) < 2:
+                continue
+            xs = [p[0] for p in polygon]
+            ys = [p[1] for p in polygon]
+            x = float(min(xs))
+            y = float(min(ys))
+            w = float(max(xs) - x)
+            h = float(max(ys) - y)
+            bbox = [x, y, w, h]
+
+            try:
+                conf = round(min(max(float(confidence), 0.0), 1.0), 3)
+            except (ValueError, TypeError):
+                conf = 0.0
+            entry = {
+                "text": text,
+                "bbox": bbox,
+                "confidence": conf,
+                "source_provider": "rapidocr",
+                "preprocessing_variant": variant,
+            }
+            tokens.append(entry)
+            lines.append(entry)
+
+        return {"tokens": tokens, "lines": lines}
 
 
 # ---------------------------------------------------------------------------
-# Provider registry — default chain: PaddleOCR primary, Tesseract fallback
+# Provider registry — default chain: RapidOCR primary, Tesseract fallback
 # ---------------------------------------------------------------------------
 
-_PROVIDER_CHAIN: list[OCRProvider] = [PaddleOCRProvider(), TesseractProvider()]
+_PROVIDER_CHAIN: list[OCRProvider] = [RapidOCRProvider(), TesseractProvider()]
 
 
 def get_provider_chain() -> list[OCRProvider]:
-    """Return the default provider chain (PaddleOCR primary, Tesseract fallback)."""
+    """Return the default provider chain (RapidOCR primary, Tesseract fallback)."""
     return _PROVIDER_CHAIN
 
 
