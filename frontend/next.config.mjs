@@ -8,9 +8,4 @@ const nextConfig = {
 
 export default withSerwist({
   ...nextConfig,
-  serwist: {
-    swSrc: "src/app/sw.ts",
-    swDest: "public/sw.js",
-    registrationStrategy: "registerOnce",
-  },
 });

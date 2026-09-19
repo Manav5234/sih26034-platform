@@ -24,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="theme-color" content="#1e3a5f" />
       </head>
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
-        <SerwistProvider swUrl="/sw.js">{children}</SerwistProvider>
+        <SerwistProvider swUrl="/serwist/sw.js">{children}</SerwistProvider>
       </body>
     </html>
   );
