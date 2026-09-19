@@ -1,3 +1,5 @@
+import logging
+import time
 import time as _time
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -54,6 +56,7 @@ from app.db.models import (
 )
 from app.db.models import FlagStatus
 from app.image_quality import ImageQualityAnalyzer
+from app.observability import configure_app_logging, request_id_var
 from app.pipeline import run_pipeline
 from app.rule_engine import RuleSetError, select_ruleset
 from app.schemas.api import (
@@ -104,6 +107,7 @@ from app.config import settings
 from app.storage import storage
 
 app = FastAPI(title="SIH26034 Legal Metrology Compliance Platform")
+configure_app_logging()
 
 app.add_middleware(
     CORSMiddleware,
@@ -111,6 +115,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
 
 # ---------------------------------------------------------------------------
@@ -119,16 +124,58 @@ app.add_middleware(
 # Without this, unhandled exceptions produce bare 500s without CORS headers,
 # which the browser reports as "Failed to fetch" / CORS errors.
 # ---------------------------------------------------------------------------
-import logging
-import traceback
-
 logger = logging.getLogger(__name__)
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Expose and bind a request ID for every request and downstream log."""
+    supplied_id = request.headers.get("X-Request-ID")
+    request_id = supplied_id if supplied_id and len(supplied_id) <= 128 else str(uuid4())
+    request.state.request_id = request_id
+    token = request_id_var.set(request_id)
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        logger.info(
+            "request_completed",
+            extra={
+                "event": "request_completed",
+                "stage": "request",
+                "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+            },
+        )
+        return response
+    except Exception:
+        logger.exception(
+            "request_failed",
+            extra={
+                "event": "request_failed",
+                "stage": "request",
+                "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+                "method": request.method,
+                "path": request.url.path,
+            },
+        )
+        raise
+    finally:
+        request_id_var.reset(token)
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error("Unhandled exception on %s %s", request.method, request.url.path)
-    logger.error(traceback.format_exc())
+    logger.exception(
+        "unhandled_exception",
+        extra={
+            "event": "unhandled_exception",
+            "method": request.method,
+            "path": request.url.path,
+        },
+    )
     from fastapi.responses import JSONResponse
     return JSONResponse(
         status_code=500,
@@ -283,6 +330,7 @@ async def check_image_quality(
           summary="Create a new scan with front and back images",
           description="Upload front (mandatory) and back (mandatory) product images for compliance analysis. Both images are required.")
 async def create_scan(
+    request: Request,
     front: UploadFile = File(..., description="Front product image (mandatory)"),
     back: UploadFile = File(..., description="Back product image (mandatory)"),
 ):
@@ -312,7 +360,12 @@ async def create_scan(
             image_ids.append(img_row.id)
 
         # Run pipeline (OCR + barcode + extraction + rule engine)
-        iq, declarations, overall, barcode_evidence, product_id = run_pipeline(scan_id, image_ids, db)
+        iq, declarations, overall, barcode_evidence, product_id = run_pipeline(
+            scan_id,
+            image_ids,
+            db,
+            request_id=request.state.request_id,
+        )
 
         scan.status = ScanStatus.COMPLETED
         scan.overall_status = overall
