@@ -1,10 +1,10 @@
-"""Evidence fusion: merge OCR + provider-lookup evidence per field.
+﻿"""Evidence fusion: merge OCR + provider-lookup evidence per field.
 
 Per-field merge algorithm:
-  1. Single source with a value → passthrough, fused_confidence = source confidence
-  2. Multiple agreeing sources → higher-confidence value, fused_confidence = max (capped at 1.0)
-  3. Multiple disagreeing sources → CONFLICT, fused_value = null, both values preserved
-  4. No sources with a value → missing, fused_value = null, fused_confidence = 0
+  1. Single source with a value â†’ passthrough, fused_confidence = source confidence
+  2. Multiple agreeing sources â†’ higher-confidence value, fused_confidence = max (capped at 1.0)
+  3. Multiple disagreeing sources â†’ CONFLICT, fused_value = null, both values preserved
+  4. No sources with a value â†’ missing, fused_value = null, fused_confidence = 0
 
 Unit normalization for net_quantity and mrp ensures "500g" vs "0.5kg" don't
 false-conflict.
@@ -12,10 +12,13 @@ false-conflict.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-# Tolerance for numeric comparison (±1% covers price rounding differences)
+logger = logging.getLogger(__name__)
+
+# Tolerance for numeric comparison (Â±1% covers price rounding differences)
 _NUMERIC_TOLERANCE = 0.01
 
 # Unit conversion factors (to base unit)
@@ -37,7 +40,7 @@ def _normalize_net_quantity(value: float, unit: str) -> float:
     """Convert net_quantity to grams (or ml for liquids) for comparison.
 
     Returns the value in the canonical unit.  We assume grams for solids
-    and milliliters for liquids — a simplification that covers the vast
+    and milliliters for liquids â€” a simplification that covers the vast
     majority of FMCG products.
     """
     unit_lower = unit.lower()
@@ -45,17 +48,29 @@ def _normalize_net_quantity(value: float, unit: str) -> float:
         return value * _NQ_UNITS_TO_GRAMS[unit_lower]
     if unit_lower in _NQ_UNITS_TO_ML:
         return value * _NQ_UNITS_TO_ML[unit_lower]
-    # Unknown unit — return as-is, comparison will likely disagree
+    # Unknown unit â€” return as-is, comparison will likely disagree
     return value
 
 
-def _normalize_mrp(value: float, currency: str) -> float:
-    """Normalize MRP to INR for comparison.
+ASSUMED_CURRENCY = "INR"
 
-    This is a stub — real conversion would use live exchange rates.
-    For now, assume all test data is INR.
+
+def _normalize_mrp(value: float, currency: str) -> float:
+    """Normalize MRP using the explicitly configured assumed currency.
+
+    No live currency conversion is performed. If OCR reports a different
+    currency, preserve the value but flag the mismatch so it cannot be
+    silently treated as INR.
     """
-    # Stub: assume INR.  Later, multiply by exchange rate if currency != "INR".
+    normalized_currency = (currency or "").strip().upper()
+
+    if normalized_currency and normalized_currency != ASSUMED_CURRENCY:
+        logger.warning(
+            "MRP currency differs from assumed currency: %s != %s",
+            normalized_currency,
+            ASSUMED_CURRENCY,
+        )
+
     return value
 
 
@@ -93,7 +108,7 @@ def _values_match(a: Any, b: Any, field_name: str) -> bool:
         return abs(norm_a - norm_b) / max(norm_a, norm_b) <= _NUMERIC_TOLERANCE
 
     if field_name == "manufacturer":
-        # String comparison — case-insensitive, strip whitespace
+        # String comparison â€” case-insensitive, strip whitespace
         return str(a).strip().lower() == str(b).strip().lower()
 
     # Fallback: exact equality
@@ -155,7 +170,7 @@ def fuse_field(
             sources=sources,
         )
 
-    # Case 2/3: Multiple sources — compare
+    # Case 2/3: Multiple sources â€” compare
     if _values_match(ocr_value, provider_value, field_name):
         # Agreement: take higher-confidence value, combined confidence = max
         if ocr_confidence >= provider_confidence:
@@ -181,3 +196,4 @@ def fuse_field(
             sources=sources,
             conflict_values=conflict_values,
         )
+
