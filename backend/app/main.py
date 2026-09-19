@@ -55,6 +55,7 @@ from app.db.models import (
 from app.db.models import FlagStatus
 from app.image_quality import ImageQualityAnalyzer
 from app.pipeline import run_pipeline
+from app.rule_engine import RuleSetError, select_ruleset
 from app.schemas.api import (
     AuthLoginRequest,
     AuthLoginResponse,
@@ -97,7 +98,7 @@ from app.schemas.product import (
     Quantity,
     UnitSalePrice,
 )
-from app.schemas.rule import RuleSet
+from app.schemas.rule import Rule, RuleSet
 from app.schemas.scan import ImageInfo, ImageQuality, Scan
 from app.config import settings
 from app.storage import storage
@@ -954,12 +955,46 @@ def get_dashboard(officer: OfficerDB = Depends(get_current_officer)):
 
 
 # ---------------------------------------------------------------------------
-# Rules (still stubs)
+# Rules
 # ---------------------------------------------------------------------------
 
 @app.get("/rules", response_model=RuleSet)
-def get_rules(effective_date: date | None = None):
-    raise HTTPException(404, "No active rule set")
+def get_rules(
+    effective_date: date | None = None,
+    jurisdiction: str = "India",
+):
+    """Return the rule set active for a jurisdiction on an inspection date."""
+    inspection_date = effective_date or date.today()
+
+    with Session(engine) as db:
+        try:
+            rule_set = select_ruleset(db, jurisdiction, inspection_date)
+        except RuleSetError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        return RuleSet(
+            id=rule_set.id,
+            source=rule_set.source,
+            rule_version=rule_set.rule_version,
+            effective_from=rule_set.effective_from,
+            effective_to=rule_set.effective_to,
+            jurisdiction=rule_set.jurisdiction,
+            rules=[
+                Rule(
+                    rule_id=rule.rule_id,
+                    source_document=rule.source_document,
+                    clause=rule.clause,
+                    applicability=rule.applicability,
+                    required_declaration=rule.required_declaration,
+                    validation_conditions=rule.validation_conditions,
+                    measurement_requirements=rule.measurement_requirements,
+                    exceptions=rule.exceptions,
+                    effective_date=rule.effective_date,
+                    evidence_requirements=rule.evidence_requirements,
+                )
+                for rule in rule_set.rules
+            ],
+        )
 
 
 # ---------------------------------------------------------------------------
