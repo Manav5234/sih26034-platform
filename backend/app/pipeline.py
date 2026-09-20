@@ -56,6 +56,7 @@ from app.fusion import FusionResult, fuse_field
 from app.image_quality import ImageQualityAnalyzer
 from app.observability import pipeline_context, timed_stage
 from app.ocr import run_ocr
+from app.placement import PlacementAnalyzer, build_region_hint
 from app.product_lookup import ProductLookupAdapter
 from app.rule_engine import RuleEngine
 
@@ -584,6 +585,7 @@ def _run_pipeline(
 
     # ── Step 2: Image quality — per image ──
     image_quality = {}
+    placement_candidates_by_label: dict[str, list[dict]] = {}
     for img in images:
         with timed_stage(logger, "image_quality", image_label=img["label"]):
             try:
@@ -598,12 +600,18 @@ def _run_pipeline(
                         "resolution": sq["resolution"],
                         "recommended_action": sq["recommended_action"],
                     }
+                    # Placement candidates are visual heuristics only.  They
+                    # are persisted as reviewable hints and never alter verdicts.
+                    placement_candidates_by_label[img["label"]] = PlacementAnalyzer().detect(bgr)
+                else:
+                    placement_candidates_by_label[img["label"]] = []
             except Exception:
                 logger.exception("image quality analysis failed for %s", img["label"])
                 image_quality[img["label"]] = {
                     "blur": "low", "glare": "none", "perspective": "slight_tilt",
                     "resolution": "adequate", "recommended_action": "proceed",
                 }
+                placement_candidates_by_label[img["label"]] = []
 
     # ── Step 3: OCR — per image ──
     # Store per-image OCR results for panel-aware extraction in Round 2
@@ -839,6 +847,11 @@ def _run_pipeline(
         "cautions": caution_source_image,
     }
 
+    # Single placement integration point: attach a visual candidate-region
+    # hint to each declaration.  This does not affect extraction or verdicts.
+    def _region_hint_for_label(label: str) -> dict:
+        return build_region_hint(label, placement_candidates_by_label.get(label, []))
+
     field_fusions = [
         ("mrp", "LMR-2024-001", fused_mrp, ocr_mrp_raw),
         ("net_quantity", "LMR-2024-002", fused_nq, ocr_nq_raw),
@@ -916,6 +929,7 @@ def _run_pipeline(
             reason=reason,
             confidence=fusion.fused_confidence,
             officer_correction=None,
+            region_hint=_region_hint_for_label(src_label),
         )
         decl.evidence = evidence_entries
         declarations.append(decl)
@@ -972,6 +986,7 @@ def _run_pipeline(
             reason=reason,
             confidence=extracted.get("confidence", 0.0) if extracted else 0.0,
             officer_correction=None,
+            region_hint=_region_hint_for_label(src_label),
         )
         decl.evidence = evidence_entries
         declarations.append(decl)
@@ -1045,6 +1060,7 @@ def _run_pipeline(
         reason=caution_reason,
         confidence=caution_result.get("confidence", 0.0) if caution_result else 0.0,
         officer_correction=None,
+        region_hint=_region_hint_for_label(caution_src_label),
     )
     caution_decl.evidence = caution_evidence
     declarations.append(caution_decl)
@@ -1101,6 +1117,7 @@ def _run_pipeline(
         reason=nutrition_reason,
         confidence=avg_conf,
         officer_correction=None,
+        region_hint=_region_hint_for_label(nutrition_src_label),
     )
     nutrition_decl.evidence = nutrition_evidence
     declarations.append(nutrition_decl)

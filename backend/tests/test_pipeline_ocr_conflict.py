@@ -3,6 +3,7 @@ from datetime import date
 from uuid import uuid4
 from unittest.mock import patch
 
+import numpy as np
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -114,7 +115,21 @@ def test_mrp_ocr_disagreement_reaches_compliance_result():
             side_effect=fake_ocr,
         ), patch(
             "app.pipeline.cv2.imread",
-            return_value=None,
+            return_value=np.full((100, 200, 3), 255, dtype=np.uint8),
+        ), patch(
+            "app.pipeline.PlacementAnalyzer.detect",
+            return_value=[
+                {
+                    "bbox": [10, 10, 180, 80],
+                    "score": 0.7,
+                    "signals": {"source": "test"},
+                    "heuristic": True,
+                    "authoritative": False,
+                    "officer_review_required": True,
+                    "method": "test",
+                    "rank": 1,
+                }
+            ],
         ), patch(
             "app.pipeline.BarcodeDecoder.decode",
             return_value=[],
@@ -132,6 +147,10 @@ def test_mrp_ocr_disagreement_reaches_compliance_result():
 
         assert mrp_decl.verdict == VerificationState.CONFLICT
         assert mrp_decl.extracted_value is None
+        assert mrp_decl.region_hint["status"] == "candidate_available"
+        assert mrp_decl.region_hint["heuristic"] is True
+        assert mrp_decl.region_hint["authoritative"] is False
+        assert mrp_decl.region_hint["region"]["bbox"] == [10, 10, 180, 80]
         assert overall == VerificationState.CONFLICT
 
         compliance_result = mrp_decl.compliance_results[0]
