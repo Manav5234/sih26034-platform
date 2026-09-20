@@ -1,0 +1,245 @@
+{
+  "version": 5,
+  "notes": "Only entries with status=verified may be referenced by hand-verified ground_truth cases. The team should collect representative Indian product-label photographs directly; the public examples below are historical pending cases, not the required 30-case measurement set. The filename is explicit so acquisition and ground_truth cannot drift.",
+  "coverage_targets": [
+    "bottle_or_cylinder",
+    "box_or_carton",
+    "pouch_flexible_plastic",
+    "reflective_or_foil",
+    "tiny_text",
+    "large_text",
+    "english",
+    "hindi_english_mixed",
+    "rotated_or_perspective",
+    "glare",
+    "blur",
+    "low_light",
+    "partial_occlusion",
+    "mrp_layout_variants",
+    "quantity_g_kg_ml_l",
+    "manufacture_date_formats",
+    "expiry_or_best_before_formats",
+    "front_back_pairs",
+    "real_violation_or_conflict_cases"
+  ],
+  "sources": [
+    {
+      "id": "001",
+      "status": "pending",
+      "title": "Indian product MRP and USP example.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Indian_product_MRP_and_USP_example.jpg",
+      "filename": "001_Indian_product_MRP_and_USP_example.jpg"
+    },
+    {
+      "id": "002",
+      "status": "pending",
+      "title": "MRP & USP India example 2.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:MRP_%26_USP_India_example_2.jpg",
+      "filename": "002_MRP_USP_India_example_2.jpg"
+    },
+    {
+      "id": "003",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "003_front.jpeg"
+    },
+    {
+      "id": "004",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "004_back.jpeg"
+    },
+    {
+      "id": "005",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "005_front.jpeg"
+    },
+    {
+      "id": "006",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "006_back.jpeg"
+    },
+    {
+      "id": "007",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "007_back.jpeg"
+    },
+    {
+      "id": "008",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "008_back.jpeg"
+    },
+    {
+      "id": "009",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "009_back.jpeg"
+    },
+    {
+      "id": "010",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "010_back.jpeg"
+    },
+    {
+      "id": "011",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "011_back.jpeg"
+    },
+    {
+      "id": "012",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "012_back.jpeg"
+    },
+    {
+      "id": "013",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "013_back.jpeg"
+    },
+    {
+      "id": "014",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "014_front.jpeg"
+    },
+    {
+      "id": "015",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "015_front.jpeg"
+    },
+    {
+      "id": "016",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "016_back.jpeg"
+    },
+    {
+      "id": "017",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "017_front.jpeg"
+    },
+    {
+      "id": "018",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "018_back.jpeg"
+    },
+    {
+      "id": "019",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "019_front.jpeg"
+    },
+    {
+      "id": "020",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "020_back.jpeg"
+    },
+    {
+      "id": "021",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "021_front.jpeg"
+    },
+    {
+      "id": "022",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "022_front.jpeg"
+    },
+    {
+      "id": "023",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "023_front.jpeg"
+    },
+    {
+      "id": "024",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "024_back.jpeg"
+    },
+    {
+      "id": "025",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "025_back.jpeg"
+    },
+    {
+      "id": "026",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "026_back.jpeg"
+    },
+    {
+      "id": "027",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "027_front.jpeg"
+    },
+    {
+      "id": "028",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "028_front.jpeg"
+    },
+    {
+      "id": "029",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "029_back.jpeg"
+    },
+    {
+      "id": "030",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "030_back.jpeg"
+    },
+    {
+      "id": "031",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "031_back.jpeg"
+    },
+    {
+      "id": "032",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "032_front.jpeg"
+    },
+    {
+      "id": "033",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "033_front.jpeg"
+    },
+    {
+      "id": "034",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "034_front.jpeg"
+    },
+    {
+      "id": "035",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "035_back.jpeg"
+    },
+    {
+      "id": "036",
+      "status": "verified",
+      "title": "Self-photographed packaged product label",
+      "filename": "036_front.jpeg"
+    }
+  ]
+}

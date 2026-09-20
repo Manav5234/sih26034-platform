@@ -39,3 +39,5 @@ backend/test_extract.py
 backend/test_extract_none.py
 backend/test_pipeline.py
 backend/test_pipeline2.py
+# Generated evaluation output
+docs/evaluation/results/

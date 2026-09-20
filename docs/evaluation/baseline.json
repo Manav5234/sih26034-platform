@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "status": "not_initialized",
+  "notes": "This file is the committed baseline slot. Run a reviewed deterministic full-suite evaluation with at least 30 hand-verified cases, then use --update-baseline docs/evaluation/baseline.json to replace this placeholder with real per-case results.",
+  "cases": []
+}

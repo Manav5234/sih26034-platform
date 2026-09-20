@@ -1,0 +1,2060 @@
+{
+  "version": 5,
+  "inspection_date": "2026-09-19",
+  "notes": "Cases 001 and 002 are retained as pending historical review cases and are excluded from accuracy calculations until a named human checks the original pixels. For multipacks, this evaluation suite uses the declared total quantity of the sale unit as the net-quantity target; record quantity_scope=total and do not rely on the production extractor's per-unit interpretation. Cases 003-024 are the hand-verified cases reviewed on 2026-09-20.",
+  "cases": [
+    {
+      "id": "001",
+      "images": [
+        {
+          "filename": "001_Indian_product_MRP_and_USP_example.jpg",
+          "label": "front"
+        }
+      ],
+      "hand_verified": false,
+      "conditions": [
+        "flat_label",
+        "english",
+        "clear_text"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 200.0,
+            "currency": "INR"
+          },
+          "ocr_text": "MRP ₹200/-"
+        },
+        "net_quantity": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 1,
+            "year": 2025
+          },
+          "ocr_text": "01/2025"
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "NOT_VERIFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_VERIFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "001",
+      "pending_reason": "Pending pixel-level human verification of the source image and printed date."
+    },
+    {
+      "id": "002",
+      "images": [
+        {
+          "filename": "002_MRP_USP_India_example_2.jpg",
+          "label": "front"
+        }
+      ],
+      "hand_verified": false,
+      "conditions": [
+        "foil_pouch",
+        "reflective",
+        "english",
+        "large_text",
+        "multipack_quantity"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 100.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹100/* ONLY"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 1000.0,
+            "unit": "g"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "NET WEIGHT WHEN PACKED 4 UNITS x 250 g EACH"
+        },
+        "manufacture_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "NOT_VERIFIED",
+        "expiry_date": "NOT_VERIFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "002",
+      "pending_reason": "Pending pixel-level human verification of the source image and MRP text.",
+      "expected_fail": {
+        "mrp": "Current extractor requires an MRP/currency keyword; retain this as a known pending regression until the photographed declaration is confirmed.",
+        "net_quantity": "Production extractor returns the per-unit 250 g value from the visible 4 x 250 g line; this evaluation suite uses the total sale-unit quantity and records quantity_scope=total."
+      }
+    },
+    {
+      "id": "003",
+      "images": [
+        {
+          "filename": "003_front.jpeg",
+          "label": "front"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 1999.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹1999"
+        },
+        "net_quantity": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 2,
+            "year": 2026
+          },
+          "ocr_text": "February 2026"
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "NOT_VERIFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "003"
+    },
+    {
+      "id": "004",
+      "images": [
+        {
+          "filename": "004_front.jpeg",
+          "label": "front"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 32.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹32"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 1.0,
+            "unit": "kg"
+          },
+          "ocr_text": "1 kg"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 7,
+            "year": 2026
+          },
+          "ocr_text": "Jul/26"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 6,
+            "year": 2028
+          },
+          "ocr_text": "Jun/28"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "004"
+    },
+    {
+      "id": "005",
+      "images": [
+        {
+          "filename": "005_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "005_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 27.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹27"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 60.0,
+            "unit": "g"
+          },
+          "ocr_text": "60 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 27,
+            "month": 6,
+            "year": 2026
+          },
+          "ocr_text": "27/06/2026"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 26,
+            "month": 3,
+            "year": 2027
+          },
+          "ocr_text": "26/03/2027"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "005"
+    },
+    {
+      "id": "006",
+      "images": [
+        {
+          "filename": "006_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 55.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹55"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 600.0,
+            "unit": "g"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "3 units x 200 g"
+        },
+        "manufacture_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "NOT_VERIFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "006"
+    },
+    {
+      "id": "007",
+      "images": [
+        {
+          "filename": "007_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "net_quantity": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "manufacture_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 13,
+            "month": 12,
+            "year": 2026
+          },
+          "ocr_text": "USE BY: 13-12-26 12:11:16"
+        }
+      },
+      "compliance": {
+        "mrp": "NOT_VERIFIED",
+        "net_quantity": "NOT_VERIFIED",
+        "manufacture_date": "NOT_VERIFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "007"
+    },
+    {
+      "id": "008",
+      "images": [
+        {
+          "filename": "008_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 400.0,
+            "unit": "g"
+          },
+          "ocr_text": "400 g"
+        },
+        "manufacture_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "NOT_VERIFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "NOT_VERIFIED",
+        "expiry_date": "NOT_VERIFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "008"
+    },
+    {
+      "id": "009",
+      "images": [
+        {
+          "filename": "009_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 100.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹100"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 45.0,
+            "unit": "ml"
+          },
+          "ocr_text": "45 ml"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 17,
+            "month": 7,
+            "year": 2025
+          },
+          "ocr_text": "17/07/2025"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 17,
+            "month": 7,
+            "year": 2027
+          },
+          "ocr_text": "2 Yrs. from Mfg. Date"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "009"
+    },
+    {
+      "id": "010",
+      "images": [
+        {
+          "filename": "010_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 280.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹280"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 500.0,
+            "unit": "g"
+          },
+          "ocr_text": "500 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 15,
+            "month": 5,
+            "year": 2026
+          },
+          "ocr_text": "15/05/2026"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 14,
+            "month": 11,
+            "year": 2027
+          },
+          "ocr_text": "14/11/2027"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "010"
+    },
+    {
+      "id": "011",
+      "images": [
+        {
+          "filename": "011_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 10.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹10"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 36.0,
+            "unit": "g"
+          },
+          "ocr_text": "36 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 18,
+            "month": 6,
+            "year": 2026
+          },
+          "ocr_text": "18/06/2026"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 15,
+            "month": 10,
+            "year": 2026
+          },
+          "ocr_text": "15/10/2026"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "011"
+    },
+    {
+      "id": "012",
+      "images": [
+        {
+          "filename": "012_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 129.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹129"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 150.0,
+            "unit": "g"
+          },
+          "ocr_text": "150 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 11,
+            "year": 2025
+          },
+          "ocr_text": "#11/25"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 11,
+            "year": 2027
+          },
+          "ocr_text": "24 months from manufactured"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "012"
+    },
+    {
+      "id": "013",
+      "images": [
+        {
+          "filename": "013_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 500.0,
+            "unit": "ml"
+          },
+          "ocr_text": "500 ml"
+        },
+        "manufacture_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "NOT_VERIFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "NOT_VERIFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "013"
+    },
+    {
+      "id": "014",
+      "images": [
+        {
+          "filename": "014_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "014_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 350.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹350"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 500.0,
+            "unit": "ml"
+          },
+          "ocr_text": "500 ml"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 30,
+            "month": 6,
+            "year": 2025
+          },
+          "ocr_text": "30/06/2025"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 29,
+            "month": 6,
+            "year": 2026
+          },
+          "ocr_text": "29/06/2026"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "014"
+    },
+    {
+      "id": "015",
+      "images": [
+        {
+          "filename": "015_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "015_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 320.0,
+            "unit": "g"
+          },
+          "ocr_text": "320 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 20,
+            "month": 2,
+            "year": 2025
+          },
+          "ocr_text": "20/02/2025"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 19,
+            "month": 2,
+            "year": 2027
+          },
+          "ocr_text": "19/02/2027"
+        }
+      },
+      "compliance": {
+        "mrp": "NOT_VERIFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "015"
+    },
+    {
+      "id": "016",
+      "images": [
+        {
+          "filename": "016_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 498.99,
+            "currency": "INR"
+          },
+          "ocr_text": "₹498.99"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 500.0,
+            "unit": "ml"
+          },
+          "ocr_text": "500 ml"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 6,
+            "year": 2026
+          },
+          "ocr_text": "06/26"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 6,
+            "year": 2028
+          },
+          "ocr_text": "06/28"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "016"
+    },
+    {
+      "id": "017",
+      "images": [
+        {
+          "filename": "017_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "017_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 199.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹199"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 500.0,
+            "unit": "g"
+          },
+          "ocr_text": "500 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 13,
+            "month": 4,
+            "year": 2026
+          },
+          "ocr_text": "13/04/2026"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 12,
+            "month": 4,
+            "year": 2027
+          },
+          "ocr_text": "12/04/2027"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "017"
+    },
+    {
+      "id": "018",
+      "images": [
+        {
+          "filename": "018_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 222.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹222"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 600.0,
+            "unit": "g"
+          },
+          "ocr_text": "600 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 16,
+            "month": 12,
+            "year": 2025
+          },
+          "ocr_text": "16.12.25"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 15,
+            "month": 1,
+            "year": 2027
+          },
+          "ocr_text": "15.01.27"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "018"
+    },
+    {
+      "id": "019",
+      "images": [
+        {
+          "filename": "019_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "019_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 300.0,
+            "unit": "g"
+          },
+          "ocr_text": "300 g"
+        },
+        "manufacture_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "NOT_VERIFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "NOT_VERIFIED",
+        "expiry_date": "NOT_VERIFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "019"
+    },
+    {
+      "id": "020",
+      "images": [
+        {
+          "filename": "020_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 499.0,
+            "currency": "INR"
+          },
+          "ocr_text": "Rs.499/-"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 200.0,
+            "unit": "g"
+          },
+          "ocr_text": "200 grams"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 6,
+            "year": 2026
+          },
+          "ocr_text": "June 2026"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 5,
+            "year": 2028
+          },
+          "ocr_text": "May 2028"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "020"
+    },
+    {
+      "id": "021",
+      "images": [
+        {
+          "filename": "021_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "021_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 25.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹25"
+        },
+        "net_quantity": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 24,
+            "month": 7,
+            "year": 2026
+          },
+          "ocr_text": "24/07/2026"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 23,
+            "month": 1,
+            "year": 2027
+          },
+          "ocr_text": "23/01/2027"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "NOT_VERIFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "021"
+    },
+    {
+      "id": "022",
+      "images": [
+        {
+          "filename": "022_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "022_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 60.0,
+            "currency": "INR"
+          },
+          "ocr_text": "₹60"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 135.0,
+            "unit": "g"
+          },
+          "ocr_text": "135 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 13,
+            "month": 7,
+            "year": 2026
+          },
+          "ocr_text": "13/07/2026"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 12,
+            "month": 3,
+            "year": 2027
+          },
+          "ocr_text": "12/03/2027"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "022"
+    },
+    {
+      "id": "023",
+      "images": [
+        {
+          "filename": "023_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "023_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "data_not_visible"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "net_quantity": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "manufacture_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "NOT_VERIFIED",
+        "net_quantity": "NOT_VERIFIED",
+        "manufacture_date": "NOT_VERIFIED",
+        "expiry_date": "NOT_VERIFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "023"
+    },
+    {
+      "id": "024",
+      "images": [
+        {
+          "filename": "024_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 600.0,
+            "currency": "INR"
+          },
+          "ocr_text": "MRP / USP ₹ 600.00"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 100.0,
+            "unit": "g"
+          },
+          "ocr_text": "NET WT. 100 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 4,
+            "year": 2025
+          },
+          "ocr_text": "APR. 2025"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 3,
+            "year": 2027
+          },
+          "ocr_text": "MAR. 2027"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "024"
+    },
+    {
+      "id": "025",
+      "images": [
+        {
+          "filename": "025_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "plastic_wrap",
+        "glare",
+        "partial_occlusion",
+        "large_text",
+        "multipack_quantity"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 3.0,
+            "unit": "N"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "Net Quantity: 3 N"
+        },
+        "manufacture_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "NOT_VERIFIED",
+        "net_quantity": "VIOLATION",
+        "manufacture_date": "NOT_VERIFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "VIOLATION",
+      "source_id": "025"
+    },
+    {
+      "id": "026",
+      "images": [
+        {
+          "filename": "026_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "pouch_flexible_plastic",
+        "glare",
+        "large_text",
+        "english"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 66.0,
+            "currency": "INR"
+          },
+          "ocr_text": "MAX RETAIL PRICE : 66.00"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 400.0,
+            "unit": "g"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "NET WEIGHT 400 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 12,
+            "month": 5,
+            "year": 2026
+          },
+          "ocr_text": "MFG. DATE : 12/05/26"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 11,
+            "month": 5,
+            "year": 2028
+          },
+          "ocr_text": "EXPIRY DATE / USE BY DATE : 11/05/28"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "026"
+    },
+    {
+      "id": "027",
+      "images": [
+        {
+          "filename": "027_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "027_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "pouch_flexible_plastic",
+        "glare",
+        "partial_occlusion",
+        "english",
+        "front_back_pair"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 399.0,
+            "currency": "INR"
+          },
+          "ocr_text": "399/-"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 500.0,
+            "unit": "g"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "500GM"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 4,
+            "year": 2025
+          },
+          "ocr_text": "APR25"
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "027"
+    },
+    {
+      "id": "028",
+      "images": [
+        {
+          "filename": "028_back.jpeg",
+          "label": "back"
+        },
+        {
+          "filename": "028_front.jpeg",
+          "label": "front"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "box_or_carton",
+        "rotated_or_perspective",
+        "glare",
+        "small_text",
+        "english"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 335.0,
+            "currency": "INR"
+          },
+          "ocr_text": "MRP ₹335/-"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 500.0,
+            "unit": "ml"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "Net Content 500 mL (452 g)"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 17,
+            "month": 7,
+            "year": 2026
+          },
+          "ocr_text": "MFG: 17/JUL/26"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 13,
+            "month": 4,
+            "year": 2027
+          },
+          "ocr_text": "EXP: 13/APR/27"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "028"
+    },
+    {
+      "id": "029",
+      "images": [
+        {
+          "filename": "029_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "bottle_or_cylinder",
+        "curved_label",
+        "glare",
+        "blur",
+        "small_text",
+        "english"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 500.0,
+            "unit": "ml"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "Net Volume 500 ml"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 11,
+            "year": 2025
+          },
+          "ocr_text": "11/25"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 10,
+            "year": 2027
+          },
+          "ocr_text": "10/27"
+        }
+      },
+      "compliance": {
+        "mrp": "NOT_VERIFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "029"
+    },
+    {
+      "id": "030",
+      "images": [
+        {
+          "filename": "030_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "pouch_flexible_plastic",
+        "glare",
+        "small_text",
+        "partial_occlusion",
+        "english"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": null,
+          "ocr_text": "M.R.P. ₹"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 250.0,
+            "unit": "g"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "Net Weight (When Packed) : 250g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": null,
+          "ocr_text": "Date of Pkg."
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": null,
+          "ocr_text": "BEST BEFORE 12 MONTHS FROM THE DATE OF PKG."
+        }
+      },
+      "compliance": {
+        "mrp": "NOT_VERIFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "NOT_VERIFIED",
+        "expiry_date": "NOT_VERIFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "030"
+    },
+    {
+      "id": "031",
+      "images": [
+        {
+          "filename": "031_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "pouch_flexible_plastic",
+        "glare",
+        "small_text",
+        "partial_occlusion",
+        "english"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 55.0,
+            "currency": "INR"
+          },
+          "ocr_text": "MAX. RETAIL PRICE: ₹55.00"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 250.0,
+            "unit": "g"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "NET WEIGHT: 250g (200g+50g Extra)"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 7,
+            "month": 6,
+            "year": 2026
+          },
+          "ocr_text": "07/06/26"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": null,
+          "ocr_text": "USE BY"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_VERIFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "031"
+    },
+    {
+      "id": "032",
+      "images": [
+        {
+          "filename": "032_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "032_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "pouch_flexible_plastic",
+        "glare",
+        "small_text",
+        "hindi_english_mixed",
+        "front_back_pair"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 60.0,
+            "currency": "INR"
+          },
+          "ocr_text": "MRP ₹60.00"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 200.0,
+            "unit": "g"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "CONTENT NET WEIGHT 200g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 20,
+            "month": 9,
+            "year": 2025
+          },
+          "ocr_text": "20-9 SEP25"
+        },
+        "expiry_date": {
+          "visible": false,
+          "value": null,
+          "ocr_text": null
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_VERIFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "032"
+    },
+    {
+      "id": "033",
+      "images": [
+        {
+          "filename": "033_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "033_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "box_or_carton",
+        "glare",
+        "small_text",
+        "rotated_or_perspective",
+        "english",
+        "front_back_pair"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 155.0,
+            "currency": "INR"
+          },
+          "ocr_text": "MAX. RETAIL PRICE ₹ 155.00"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 400.0,
+            "unit": "g"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "NET WEIGHT : 400 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 23,
+            "month": 5,
+            "year": 2026
+          },
+          "ocr_text": "23 MAY 2026"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 22,
+            "month": 9,
+            "year": 2026
+          },
+          "ocr_text": "USE BY : 22 SEP 2026"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "033"
+    },
+    {
+      "id": "034",
+      "images": [
+        {
+          "filename": "034_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "034_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "bottle_or_cylinder",
+        "curved_label",
+        "small_text",
+        "glare",
+        "english",
+        "front_back_pair"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 130.0,
+            "currency": "INR"
+          },
+          "ocr_text": "MRP ₹130/-"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 190.0,
+            "unit": "g"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "Net Weight : 190g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 31,
+            "month": 7,
+            "year": 2026
+          },
+          "ocr_text": "MFG.: 31/07/2026"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": 30,
+            "month": 7,
+            "year": 2028
+          },
+          "ocr_text": "USE BY: 30/07/2028"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "SATISFIED"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "034"
+    },
+    {
+      "id": "035",
+      "images": [
+        {
+          "filename": "035_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "pouch_flexible_plastic",
+        "small_text",
+        "english"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 50.0,
+            "currency": "INR"
+          },
+          "ocr_text": "50 (Rs. 0.25/g)"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 200.0,
+            "unit": "g"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "NET QUANTITY: 200 g"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": 19,
+            "month": 9,
+            "year": 2026
+          },
+          "ocr_text": "DATE OF MFG.: 19/09/26"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": null,
+          "ocr_text": "USE BY:"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_VERIFIED"
+      },
+      "overall_compliance": "NOT_VERIFIED",
+      "source_id": "035"
+    },
+    {
+      "id": "036",
+      "images": [
+        {
+          "filename": "036_front.jpeg",
+          "label": "front"
+        },
+        {
+          "filename": "036_back.jpeg",
+          "label": "back"
+        }
+      ],
+      "hand_verified": true,
+      "verified_by": "Goober",
+      "verified_on": "2026-09-20",
+      "conditions": [
+        "bottle_or_cylinder",
+        "curved_label",
+        "small_text",
+        "english",
+        "front_back_pair"
+      ],
+      "ground_truth": {
+        "mrp": {
+          "visible": true,
+          "value": {
+            "amount": 150.0,
+            "currency": "INR"
+          },
+          "ocr_text": "150.00"
+        },
+        "net_quantity": {
+          "visible": true,
+          "value": {
+            "value": 100.0,
+            "unit": "ml"
+          },
+          "quantity_scope": "total",
+          "ocr_text": "Net Quantity 100ml"
+        },
+        "manufacture_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 12,
+            "year": 2023
+          },
+          "ocr_text": "12-23"
+        },
+        "expiry_date": {
+          "visible": true,
+          "value": {
+            "day": null,
+            "month": 12,
+            "year": 2026
+          },
+          "ocr_text": "12-26"
+        }
+      },
+      "compliance": {
+        "mrp": "SATISFIED",
+        "net_quantity": "SATISFIED",
+        "manufacture_date": "SATISFIED",
+        "expiry_date": "NOT_APPLICABLE"
+      },
+      "overall_compliance": "SATISFIED",
+      "source_id": "036"
+    }
+  ]
+}

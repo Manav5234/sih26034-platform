@@ -1,0 +1,30 @@
+name: Evaluation harness syntax
+
+on:
+  pull_request:
+  push:
+    paths:
+      - "backend/scripts/evaluate.py"
+      - "backend/scripts/fetch_evaluation_candidates.py"
+      - "backend/requirements.txt"
+      - "backend/tests/test_evaluate.py"
+      - ".github/workflows/evaluation-syntax.yml"
+
+jobs:
+  python311-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Compile evaluation scripts
+        run: python -m py_compile backend/scripts/evaluate.py backend/scripts/fetch_evaluation_candidates.py
+      - name: Run evaluation unit tests
+        working-directory: backend
+        env:
+          JWT_SECRET: test-evaluation-secret
+          DATABASE_URL: sqlite:////tmp/sih26034_evaluation_ci.db
+        run: python -m pytest tests/test_evaluate.py -q
