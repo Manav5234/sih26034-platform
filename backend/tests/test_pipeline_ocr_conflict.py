@@ -151,6 +151,8 @@ def test_mrp_ocr_disagreement_reaches_compliance_result():
         assert mrp_decl.region_hint["heuristic"] is True
         assert mrp_decl.region_hint["authoritative"] is False
         assert mrp_decl.region_hint["region"]["bbox"] == [10, 10, 180, 80]
+        assert mrp_decl.scale_estimation["status"] == "NOT_VERIFIED"
+        assert mrp_decl.scale_estimation["pixels_per_mm"] is None
         assert overall == VerificationState.CONFLICT
 
         compliance_result = mrp_decl.compliance_results[0]

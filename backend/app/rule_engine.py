@@ -22,6 +22,7 @@ from app.db.models import (
 from app.db.models import (
     VerificationState,
 )
+from app.scale_estimation import ESTABLISHED, convert_font_height_to_mm
 
 
 class RuleSetError(Exception):
@@ -201,6 +202,39 @@ def validate_conditions(
     return True, None
 
 
+def evaluate_font_size_condition(
+    extracted_value: Any,
+    scale_estimation: dict[str, Any] | None,
+    conditions: dict[str, Any],
+) -> tuple[VerificationState | None, str | None]:
+    """Evaluate a physical font-size rule without ever treating pixels as mm.
+
+    A font-size rule opts in by declaring ``min_font_size_mm`` and/or
+    ``max_font_size_mm``. The extractor must provide ``font_height_px`` in its
+    structured value. Missing pixel geometry or scale is NOT_VERIFIED, not a
+    pass and not a fabricated conversion.
+    """
+    if "min_font_size_mm" not in conditions and "max_font_size_mm" not in conditions:
+        return None, None
+    pixel_height = extracted_value.get("font_height_px") if isinstance(extracted_value, dict) else None
+    measured = convert_font_height_to_mm(pixel_height, scale_estimation)
+    if measured["status"] != ESTABLISHED:
+        return VerificationState.NOT_VERIFIED, (
+            "physical font size not verified: " + measured["reason"]
+        )
+
+    height_mm = measured["font_height_mm"]
+    if "min_font_size_mm" in conditions and height_mm < float(conditions["min_font_size_mm"]):
+        return VerificationState.VIOLATION, (
+            f"font height {height_mm:.4f} mm below minimum {conditions['min_font_size_mm']} mm"
+        )
+    if "max_font_size_mm" in conditions and height_mm > float(conditions["max_font_size_mm"]):
+        return VerificationState.VIOLATION, (
+            f"font height {height_mm:.4f} mm above maximum {conditions['max_font_size_mm']} mm"
+        )
+    return VerificationState.SATISFIED, f"font height {height_mm:.4f} mm meets physical size rule"
+
+
 # ---------------------------------------------------------------------------
 # Per-declaration evaluation
 # ---------------------------------------------------------------------------
@@ -236,6 +270,14 @@ def _evaluate_declaration(
     verdict_val = decl.verdict.value if hasattr(decl.verdict, "value") else str(decl.verdict)
     if verdict_val == "CONFLICT":
         return VerificationState.CONFLICT, f"conflicting evidence for '{decl.field_name}'", decl.confidence
+
+    # Physical font rules require both an explicitly measured pixel height and
+    # a provenance-bearing scale result. Pixels alone are never millimetres.
+    font_verdict, font_reason = evaluate_font_size_condition(
+        decl.extracted_value, getattr(decl, "scale_estimation", None), conditions
+    )
+    if font_verdict is not None:
+        return font_verdict, font_reason or "font-size evaluation failed", decl.confidence
 
     # 4. Confidence check
     confidence = decl.confidence or 0.0

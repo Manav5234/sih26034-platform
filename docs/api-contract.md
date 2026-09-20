@@ -87,6 +87,15 @@ Upload images and start a new scan.
         "authoritative": false,
         "officer_review_required": true,
         "disclaimer": "Heuristic visual region only; it is not a legal placement determination and requires officer review."
+      },
+      "scale_estimation": {
+        "status": "ESTABLISHED",
+        "pixels_per_mm": 12.121212,
+        "reason": "decoded linear barcode matched configured GS1 nominal module geometry",
+        "method": "barcode_module_geometry",
+        "millimetre_values_available": true,
+        "derivation": "pixels_per_mm = 380.000 px / (95 modules × 0.330 mm)",
+        "officer_review_required": true
       }
     }
   ],
@@ -186,6 +195,12 @@ Upload images and start a new scan.
 
 `region_hint` is a visual heuristic to support officer review. It is never a
 legal placement determination and does not change the declaration verdict.
+
+`scale_estimation` is returned for every newly analysed declaration. It is
+either `ESTABLISHED` with barcode-module provenance and derivation, or
+`NOT_VERIFIED` with `pixels_per_mm: null`. Pixel measurements are never
+silently presented as millimetres; font-size rules return `NOT_VERIFIED` when
+there is no established physical scale.
 
 ---
 
