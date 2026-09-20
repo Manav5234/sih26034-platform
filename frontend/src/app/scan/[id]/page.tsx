@@ -32,6 +32,16 @@ interface OfficerCorrection {
   corrected_at: string;
 }
 
+interface RegionHint {
+  image_label: string;
+  status: "candidate_available" | "no_candidate_detected";
+  region: { bbox: [number, number, number, number]; score: number } | null;
+  heuristic: boolean;
+  authoritative: boolean;
+  officer_review_required: boolean;
+  disclaimer: string;
+}
+
 interface Declaration {
   id: string;
   field_name: string;
@@ -42,6 +52,7 @@ interface Declaration {
   confidence: number;
   evidence: Evidence[];
   officer_correction?: OfficerCorrection | null;
+  region_hint?: RegionHint | null;
 }
 
 interface ImageInfo {
@@ -577,6 +588,26 @@ export default function ScanResultPage() {
                     Rule: <span className="font-mono text-slate-700">{decl.rule_id || "—"}</span>
                   </div>
                   <div className="mb-1 text-xs text-slate-500">Reason: {decl.reason}</div>
+
+                  {decl.region_hint && (
+                    <div className="mt-2 rounded-lg border border-dashed border-sky-300 bg-sky-50 p-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">
+                        Visual placement hint — officer review required
+                      </p>
+                      {decl.region_hint.status === "candidate_available" && decl.region_hint.region ? (
+                        <p className="mt-1 text-xs text-sky-900">
+                          Candidate region on {decl.region_hint.image_label}: bbox({decl.region_hint.region.bbox.join(", ")})
+                          {" "}(heuristic score: {(decl.region_hint.region.score * 100).toFixed(0)}%).
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-xs text-sky-900">No visual candidate region was detected for this image.</p>
+                      )}
+                      <p className="mt-1 text-[10px] text-sky-700">{decl.region_hint.disclaimer}</p>
+                      <p className="mt-1 text-[10px] text-sky-700">
+                        Use Confirm, Correct, or Mark Unresolved below to record your review of the declaration; this hint never decides the verdict.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Officer correction — additive, not overwriting */}
                   {decl.officer_correction && (

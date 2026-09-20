@@ -54,6 +54,17 @@ export interface OfficerCorrection {
   corrected_at: string;
 }
 
+export interface RegionHint {
+  kind: "placement_candidate_region";
+  image_label: string;
+  status: "candidate_available" | "no_candidate_detected";
+  region: { bbox: [number, number, number, number]; score: number } | null;
+  heuristic: true;
+  authoritative: false;
+  officer_review_required: true;
+  disclaimer: string;
+}
+
 export interface Declaration {
   id: string;
   scan_id: string;
@@ -65,6 +76,7 @@ export interface Declaration {
   reason: string;
   confidence: number;
   officer_correction: OfficerCorrection | null;
+  region_hint: RegionHint | null;
 }
 
 // ---- Product sub-models ----

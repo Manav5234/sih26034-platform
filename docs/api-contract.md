@@ -77,7 +77,17 @@ Upload images and start a new scan.
       "verdict": "SATISFIED",
       "reason": "MRP value matches the declared amount on the package label.",
       "confidence": 0.92,
-      "officer_correction": null
+      "officer_correction": null,
+      "region_hint": {
+        "kind": "placement_candidate_region",
+        "image_label": "front",
+        "status": "candidate_available",
+        "region": { "bbox": [80, 60, 640, 380], "score": 0.71 },
+        "heuristic": true,
+        "authoritative": false,
+        "officer_review_required": true,
+        "disclaimer": "Heuristic visual region only; it is not a legal placement determination and requires officer review."
+      }
     }
   ],
   "overall_status": "SATISFIED",
@@ -157,12 +167,25 @@ Upload images and start a new scan.
       "verdict": "SATISFIED",
       "reason": "MRP value matches the declared amount on the package label.",
       "confidence": 0.92,
-      "officer_correction": null
+      "officer_correction": null,
+      "region_hint": {
+        "kind": "placement_candidate_region",
+        "image_label": "front",
+        "status": "candidate_available",
+        "region": { "bbox": [80, 60, 640, 380], "score": 0.71 },
+        "heuristic": true,
+        "authoritative": false,
+        "officer_review_required": true,
+        "disclaimer": "Heuristic visual region only; it is not a legal placement determination and requires officer review."
+      }
     }
   ],
   "overall_status": "SATISFIED"
 }
 ```
+
+`region_hint` is a visual heuristic to support officer review. It is never a
+legal placement determination and does not change the declaration verdict.
 
 ---
 

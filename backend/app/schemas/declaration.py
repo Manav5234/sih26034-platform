@@ -29,3 +29,4 @@ class Declaration(BaseModel):
     reason: str
     confidence: float
     officer_correction: OfficerCorrection | None = None
+    region_hint: dict[str, Any] | None = None
