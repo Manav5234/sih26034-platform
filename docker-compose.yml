@@ -11,9 +11,7 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    build: ./backend
     ports:
       - "8000:8000"
     environment:

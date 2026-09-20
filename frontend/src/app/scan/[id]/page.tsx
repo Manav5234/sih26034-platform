@@ -42,6 +42,25 @@ interface RegionHint {
   disclaimer: string;
 }
 
+interface ScaleEstimation {
+  status: "ESTABLISHED" | "NOT_VERIFIED";
+  pixels_per_mm: number | null;
+  reason: string;
+  method: string;
+  millimetre_values_available: boolean;
+  reference?: {
+    barcode_format: string;
+    bbox_long_axis_px: number;
+    encoded_modules: number;
+    nominal_x_dimension_mm: number;
+    nominal_symbol_width_mm: number;
+    standard: string;
+  };
+  derivation?: string;
+  limitations?: string;
+  officer_review_required?: boolean;
+}
+
 interface Declaration {
   id: string;
   field_name: string;
@@ -53,6 +72,7 @@ interface Declaration {
   evidence: Evidence[];
   officer_correction?: OfficerCorrection | null;
   region_hint?: RegionHint | null;
+  scale_estimation?: ScaleEstimation | null;
 }
 
 interface ImageInfo {
@@ -606,6 +626,31 @@ export default function ScanResultPage() {
                       <p className="mt-1 text-[10px] text-sky-700">
                         Use Confirm, Correct, or Mark Unresolved below to record your review of the declaration; this hint never decides the verdict.
                       </p>
+                    </div>
+                  )}
+
+                  {decl.scale_estimation && (
+                    <div className="mt-2 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                        Physical scale estimation
+                      </p>
+                      {decl.scale_estimation.status === "ESTABLISHED" ? (
+                        <div className="mt-1 text-xs text-amber-900">
+                          <p>Scale: <span className="font-mono font-medium">{decl.scale_estimation.pixels_per_mm?.toFixed(3)}</span> px/mm</p>
+                          {decl.scale_estimation.reference && (
+                            <p className="mt-0.5 text-[10px] text-amber-700">
+                              {decl.scale_estimation.reference.barcode_format} — {decl.scale_estimation.reference.bbox_long_axis_px}px / {decl.scale_estimation.reference.nominal_symbol_width_mm}mm nominal
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-xs text-amber-900">Scale not established — {decl.scale_estimation.reason}</p>
+                      )}
+                      {decl.scale_estimation.officer_review_required && (
+                        <p className="mt-1 text-[10px] text-amber-700">
+                          Officer review required; this estimate uses nominal GS1 geometry and should not be treated as authoritative.
+                        </p>
+                      )}
                     </div>
                   )}
 

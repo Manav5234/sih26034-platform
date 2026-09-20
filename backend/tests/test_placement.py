@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pytest
 
 from app.placement import PlacementAnalyzer, build_region_hint
+
+FIXTURES_DIR = Path(__file__).resolve().parents[2] / "tests"
 
 
 def test_detect_returns_ranked_reviewable_candidate_for_synthetic_label():
@@ -24,7 +28,7 @@ def test_detect_returns_ranked_reviewable_candidate_for_synthetic_label():
 
 @pytest.mark.parametrize("fixture_name", ["sharp.png", "blurry.png"])
 def test_detect_handles_existing_label_fixtures(fixture_name: str):
-    fixture = f"/fixtures/{fixture_name}"
+    fixture = FIXTURES_DIR / fixture_name
     image = cv2.imread(str(fixture))
 
     assert image is not None, f"fixture missing or unreadable: {fixture}"
