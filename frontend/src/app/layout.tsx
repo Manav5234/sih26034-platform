@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "ScanCheck — Product Compliance Intelligence",
+  title: "ScanCheck - Product Compliance Intelligence",
   description:
     "AI-powered product label compliance inspection and legal metrology verification platform",
   appleWebApp: {
