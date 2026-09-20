@@ -30,3 +30,4 @@ class Declaration(BaseModel):
     confidence: float
     officer_correction: OfficerCorrection | None = None
     region_hint: dict[str, Any] | None = None
+    scale_estimation: dict[str, Any] | None = None

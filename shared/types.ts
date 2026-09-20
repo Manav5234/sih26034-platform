@@ -65,6 +65,16 @@ export interface RegionHint {
   disclaimer: string;
 }
 
+export interface ScaleEstimation {
+  status: "ESTABLISHED" | "NOT_VERIFIED";
+  pixels_per_mm: number | null;
+  reason: string;
+  method: "barcode_module_geometry";
+  millimetre_values_available: boolean;
+  derivation?: string;
+  officer_review_required?: boolean;
+}
+
 export interface Declaration {
   id: string;
   scan_id: string;
@@ -77,6 +87,7 @@ export interface Declaration {
   confidence: number;
   officer_correction: OfficerCorrection | null;
   region_hint: RegionHint | null;
+  scale_estimation: ScaleEstimation | null;
 }
 
 // ---- Product sub-models ----
