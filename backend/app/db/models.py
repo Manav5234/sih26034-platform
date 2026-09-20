@@ -192,6 +192,11 @@ class Declaration(Base):
     reason = Column(Text, nullable=False)
     confidence = Column(Float, nullable=False)
     officer_correction = Column(JSONB, nullable=True)
+    # Heuristic visual placement candidate; never a legal determination.
+    region_hint = Column(JSONB, nullable=True)
+    # Auditable physical-scale result. NULL only for pre-Task-H records.
+    # New pipeline records store ESTABLISHED or explicit NOT_VERIFIED data.
+    scale_estimation = Column(JSONB, nullable=True)
     created_at = _created_at()
 
     scan = relationship("Scan", back_populates="declarations")

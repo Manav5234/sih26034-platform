@@ -56,8 +56,10 @@ from app.fusion import FusionResult, fuse_field
 from app.image_quality import ImageQualityAnalyzer
 from app.observability import pipeline_context, timed_stage
 from app.ocr import run_ocr
+from app.placement import PlacementAnalyzer, build_region_hint
 from app.product_lookup import ProductLookupAdapter
 from app.rule_engine import RuleEngine
+from app.scale_estimation import ESTABLISHED, estimate_barcode_scale, not_verified
 
 logger = logging.getLogger(__name__)
 
@@ -584,11 +586,14 @@ def _run_pipeline(
 
     # ── Step 2: Image quality — per image ──
     image_quality = {}
+    placement_candidates_by_label: dict[str, list[dict]] = {}
+    image_pixels_by_label: dict[str, Any] = {}
     for img in images:
         with timed_stage(logger, "image_quality", image_label=img["label"]):
             try:
                 bgr = cv2.imread(img["path"])
                 if bgr is not None:
+                    image_pixels_by_label[img["label"]] = bgr
                     analyzer = ImageQualityAnalyzer()
                     sq = analyzer.analyze(bgr)
                     image_quality[img["label"]] = {
@@ -598,12 +603,20 @@ def _run_pipeline(
                         "resolution": sq["resolution"],
                         "recommended_action": sq["recommended_action"],
                     }
+                    # Placement candidates are visual heuristics only.  They
+                    # are persisted as reviewable hints and never alter verdicts.
+                    placement_candidates_by_label[img["label"]] = PlacementAnalyzer().detect(bgr)
+                else:
+                    image_pixels_by_label[img["label"]] = None
+                    placement_candidates_by_label[img["label"]] = []
             except Exception:
                 logger.exception("image quality analysis failed for %s", img["label"])
                 image_quality[img["label"]] = {
                     "blur": "low", "glare": "none", "perspective": "slight_tilt",
                     "resolution": "adequate", "recommended_action": "proceed",
                 }
+                image_pixels_by_label[img["label"]] = None
+                placement_candidates_by_label[img["label"]] = []
 
     # ── Step 3: OCR — per image ──
     # Store per-image OCR results for panel-aware extraction in Round 2
@@ -691,6 +704,13 @@ def _run_pipeline(
 
     # ── Step 4: Barcode / QR detection — per image ──
     all_barcodes: list[dict] = []
+    # Preserve the per-image physical reference before barcode de-duplication.
+    # A barcode seen on both panels is later marked source_image="both", which
+    # must not discard the evidence needed for either panel's scale estimate.
+    scale_by_label: dict[str, dict] = {
+        image["label"]: not_verified("no usable EAN-13 or UPC-A barcode decoded for this image")
+        for image in images
+    }
     for img in images:
         with timed_stage(logger, "barcode_decode", image_label=img["label"]):
             try:
@@ -698,6 +718,13 @@ def _run_pipeline(
                 barcodes = decoder.decode(img["path"])
                 for bc in barcodes:
                     bc["source_image"] = img["label"]
+                    scale = estimate_barcode_scale(
+                        image_pixels_by_label.get(img["label"]),
+                        bc.get("bbox"),
+                        bc.get("format"),
+                    )
+                    if scale["status"] == ESTABLISHED:
+                        scale_by_label[img["label"]] = scale
                 all_barcodes.extend(barcodes)
                 logger.info(
                     "barcode_result",
@@ -712,6 +739,9 @@ def _run_pipeline(
                 logger.warning("Barcode decode failed for %s: %s", img["path"], e)
 
     barcodes, barcode_warnings = _deduplicate_barcodes(all_barcodes)
+
+    # The per-panel results are always ESTABLISHED with GS1 provenance or
+    # explicit NOT_VERIFIED; no pixel value is silently interpreted as mm.
 
     barcode_evidence: list[EvDB] = []
     for bc in barcodes:
@@ -839,6 +869,15 @@ def _run_pipeline(
         "cautions": caution_source_image,
     }
 
+    # Single placement integration point: attach a visual candidate-region
+    # hint to each declaration.  This does not affect extraction or verdicts.
+    def _region_hint_for_label(label: str) -> dict:
+        return build_region_hint(label, placement_candidates_by_label.get(label, []))
+
+    def _scale_estimation_for_label(label: str) -> dict:
+        """Return auditable physical scale or explicit NOT_VERIFIED."""
+        return scale_by_label.get(label, not_verified("source image is unknown"))
+
     field_fusions = [
         ("mrp", "LMR-2024-001", fused_mrp, ocr_mrp_raw),
         ("net_quantity", "LMR-2024-002", fused_nq, ocr_nq_raw),
@@ -916,6 +955,8 @@ def _run_pipeline(
             reason=reason,
             confidence=fusion.fused_confidence,
             officer_correction=None,
+            region_hint=_region_hint_for_label(src_label),
+            scale_estimation=_scale_estimation_for_label(src_label),
         )
         decl.evidence = evidence_entries
         declarations.append(decl)
@@ -972,6 +1013,8 @@ def _run_pipeline(
             reason=reason,
             confidence=extracted.get("confidence", 0.0) if extracted else 0.0,
             officer_correction=None,
+            region_hint=_region_hint_for_label(src_label),
+            scale_estimation=_scale_estimation_for_label(src_label),
         )
         decl.evidence = evidence_entries
         declarations.append(decl)
@@ -1045,6 +1088,8 @@ def _run_pipeline(
         reason=caution_reason,
         confidence=caution_result.get("confidence", 0.0) if caution_result else 0.0,
         officer_correction=None,
+        region_hint=_region_hint_for_label(caution_src_label),
+        scale_estimation=_scale_estimation_for_label(caution_src_label),
     )
     caution_decl.evidence = caution_evidence
     declarations.append(caution_decl)
@@ -1101,6 +1146,8 @@ def _run_pipeline(
         reason=nutrition_reason,
         confidence=avg_conf,
         officer_correction=None,
+        region_hint=_region_hint_for_label(nutrition_src_label),
+        scale_estimation=_scale_estimation_for_label(nutrition_src_label),
     )
     nutrition_decl.evidence = nutrition_evidence
     declarations.append(nutrition_decl)

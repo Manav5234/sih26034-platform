@@ -246,6 +246,8 @@ def _db_decl_to_schema(d: DeclDB) -> Declaration:
         reason=d.reason,
         confidence=d.confidence,
         officer_correction=d.officer_correction,
+        region_hint=d.region_hint,
+        scale_estimation=d.scale_estimation,
     )
 
 
