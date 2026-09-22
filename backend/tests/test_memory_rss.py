@@ -1,0 +1,29 @@
+"""Memory-RSS diagnostics: additive logging must never break the pipeline."""
+import logging
+
+from app.observability import log_rss, process_rss_mb
+
+
+def test_process_rss_mb_returns_positive_or_none():
+    rss = process_rss_mb()
+    assert rss is None or rss > 0
+
+
+def test_log_rss_emits_structured_line(caplog):
+    # ponytail: non-"app" logger — the app hierarchy sets propagate=False.
+    with caplog.at_level(logging.INFO, logger="test_memory_rss"):
+        log_rss(logging.getLogger("test_memory_rss"), "memory_rss", stage="test_stage")
+    assert any(
+        r.getMessage() == "memory_rss" and getattr(r, "stage", None) == "test_stage"
+        for r in caplog.records
+    )
+
+
+def test_ensure_loaded_noop_emits_no_rss_lines(caplog):
+    from app.ocr_provider import RapidOCRProvider
+    p = RapidOCRProvider()
+    p._initialized = True  # skip real model load; guard must stay silent
+    p._engine = None
+    with caplog.at_level(logging.INFO):
+        assert p.extract("nonexistent.png") == {"tokens": [], "lines": []}
+    assert not [r for r in caplog.records if getattr(r, "stage", "") in ("rapidocr_pre_load", "rapidocr_post_load")]

@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Protocol, runtime_checkable
 
+from app.observability import log_rss
+
 logger = logging.getLogger(__name__)
 
 
@@ -189,6 +191,8 @@ class RapidOCRProvider:
     def _ensure_loaded(self):
         """Lazy-import RapidOCR to avoid startup cost if never used."""
         if not self._initialized:
+            # ponytail: diagnostic RSS lines only — load logic unchanged.
+            log_rss(logger, "memory_rss", stage="rapidocr_pre_load")
             try:
                 from rapidocr_onnxruntime import RapidOCR
                 self._engine = RapidOCR()
@@ -197,6 +201,7 @@ class RapidOCRProvider:
                 logger.warning("rapidocr-onnxruntime not available")
                 self._engine = None
                 self._initialized = True
+            log_rss(logger, "memory_rss", stage="rapidocr_post_load")
 
     def extract(
         self,
