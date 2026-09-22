@@ -40,6 +40,7 @@ class JsonFormatter(logging.Formatter):
         "method",
         "path",
         "status_code",
+        "rss_mb",
     )
 
     def format(self, record: logging.LogRecord) -> str:
@@ -73,6 +74,40 @@ def configure_app_logging() -> None:
     handler.setFormatter(JsonFormatter())
     handler.addFilter(ContextFilter())
     app_logger.addHandler(handler)
+
+
+def process_rss_mb() -> float | None:
+    """Current process RSS in MB, or None where unmeasurable.
+
+    Reads /proc on Linux (Render); falls back to getrusage peak elsewhere.
+    Stdlib only — no psutil dependency for a diagnostic.
+    """
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return round(int(line.split()[1]) / 1024, 1)
+    except OSError:
+        pass
+    try:
+        import resource
+        import sys
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return round(peak / 1024, 1) if sys.platform.startswith("linux") else round(peak / 1024 / 1024, 1)
+    except Exception:
+        return None
+
+
+def log_rss(logger: logging.Logger, event: str, *, stage: str, **extra: object) -> None:
+    """Emit one structured memory log line; never raises, never changes behavior."""
+    try:
+        rss = process_rss_mb()
+    except Exception:
+        rss = None
+    logger.info(
+        event,
+        extra={"event": event, "stage": stage, **({"rss_mb": rss} if rss is not None else {}), **extra},
+    )
 
 
 @contextmanager

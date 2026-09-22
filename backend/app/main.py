@@ -2,6 +2,7 @@ import logging
 import time
 import time as _time
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -56,7 +57,7 @@ from app.db.models import (
 )
 from app.db.models import FlagStatus
 from app.image_quality import ImageQualityAnalyzer
-from app.observability import configure_app_logging, request_id_var
+from app.observability import configure_app_logging, log_rss, request_id_var
 from app.pipeline import run_pipeline
 from app.rule_engine import RuleSetError, select_ruleset
 from app.schemas.api import (
@@ -106,7 +107,14 @@ from app.schemas.scan import ImageInfo, ImageQuality, Scan
 from app.config import settings
 from app.storage import storage
 
-app = FastAPI(title="SIH26034 Legal Metrology Compliance Platform")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ponytail: diagnostic baseline only — post-startup RSS before any request.
+    log_rss(logging.getLogger(__name__), "memory_rss", stage="startup_baseline")
+    yield
+
+
+app = FastAPI(title="SIH26034 Legal Metrology Compliance Platform", lifespan=lifespan)
 configure_app_logging()
 
 app.add_middleware(
