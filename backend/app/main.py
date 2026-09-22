@@ -307,8 +307,8 @@ async def check_image_quality(
       resolution: "adequate" | "low"
       recommended_action: "recapture" | "proceed_with_caution" | "proceed"
     """
-    # Read image bytes
-    raw = await file.read()
+    # Read image bytes (capped: read errors on oversize before full body sits in RAM)
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(400, f"File too large (max {MAX_UPLOAD_BYTES // (1024*1024)}MB)")
 
@@ -336,9 +336,9 @@ async def create_scan(
     front: UploadFile = File(..., description="Front product image (mandatory)"),
     back: UploadFile = File(..., description="Back product image (mandatory)"),
 ):
-    # Read and validate both images
-    front_bytes = await front.read()
-    back_bytes = await back.read()
+    # Read and validate both images (capped: reject before full body sits in RAM)
+    front_bytes = await front.read(MAX_UPLOAD_BYTES + 1)
+    back_bytes = await back.read(MAX_UPLOAD_BYTES + 1)
 
     for label, img, raw_bytes in [("front", front, front_bytes), ("back", back, back_bytes)]:
         if img.content_type not in ALLOWED_MIME:
@@ -432,7 +432,7 @@ async def upload_image(scan_id: UUID, images: list[UploadFile] = File(...)):
             raise HTTPException(400, "No file provided")
         if img.content_type not in ALLOWED_MIME:
             raise HTTPException(400, f"Invalid file type: {img.content_type}")
-        raw = await img.read()
+        raw = await img.read(MAX_UPLOAD_BYTES + 1)
         if len(raw) > MAX_UPLOAD_BYTES:
             raise HTTPException(400, "File too large")
 
