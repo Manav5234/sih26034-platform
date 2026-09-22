@@ -41,6 +41,9 @@ class JsonFormatter(logging.Formatter):
         "path",
         "status_code",
         "rss_mb",
+        "variant",
+        "img_w",
+        "img_h",
     )
 
     def format(self, record: logging.LogRecord) -> str:
@@ -108,6 +111,31 @@ def log_rss(logger: logging.Logger, event: str, *, stage: str, **extra: object) 
         event,
         extra={"event": event, "stage": stage, **({"rss_mb": rss} if rss is not None else {}), **extra},
     )
+
+
+def log_inference_rss(
+    logger: logging.Logger, stage: str, image_path: str, variant: str
+) -> None:
+    """RSS + on-disk dims for one OCR inference call; never raises.
+
+    Reads dims with a throwaway imread purely for logging — the image bytes
+    actually passed to the engine are untouched. The transient decode (~12MB
+    at 2000px) is freed before inference starts.
+    """
+    w: int | None = None
+    h: int | None = None
+    try:
+        import cv2
+
+        img = cv2.imread(image_path)
+        if img is not None:
+            h, w = img.shape[:2]
+    except Exception:
+        w = h = None  # dims stay absent; the RSS line is still emitted
+    extra: dict[str, object] = {"variant": variant}
+    if w is not None and h is not None:
+        extra.update(img_w=w, img_h=h)
+    log_rss(logger, "memory_rss", stage=stage, **extra)
 
 
 @contextmanager

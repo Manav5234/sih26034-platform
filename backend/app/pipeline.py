@@ -54,7 +54,7 @@ from app.extraction import (
 )
 from app.fusion import FusionResult, fuse_field
 from app.image_quality import ImageQualityAnalyzer
-from app.observability import pipeline_context, timed_stage
+from app.observability import log_inference_rss, pipeline_context, timed_stage
 from app.ocr import run_ocr
 from app.placement import PlacementAnalyzer, build_region_hint
 from app.product_lookup import ProductLookupAdapter
@@ -268,7 +268,12 @@ def _bottom_crop_ocr(image_path: str) -> list[dict]:
     try:
         os.close(tmp_fd)
         cv2.imwrite(tmp_path, upscaled)
-        result = run_ocr(tmp_path)
+        # ponytail: diagnostic RSS/dims lines only — recrop logic unchanged.
+        log_inference_rss(logger, "variant_pre_ocr", tmp_path, "bottom_crop_2x")
+        try:
+            result = run_ocr(tmp_path)
+        finally:
+            log_inference_rss(logger, "variant_post_ocr", tmp_path, "bottom_crop_2x")
         lines = result.get("lines", [])
         for line in lines:
             line["preprocessing_variant"] = "bottom_crop_2x"
@@ -342,10 +347,15 @@ def _generate_ocr_variants_with_results(
     seen_texts: set = set()  # simple dedup by text
 
     for variant_path, variant_name in variants:
+        # ponytail: diagnostic RSS/dims lines only — variant logic unchanged.
+        log_inference_rss(logger, "variant_pre_ocr", variant_path, variant_name)
         try:
             result = provider_result_fn(variant_path)
         except Exception as e:
             logger.warning("OCR variant %s failed for %s: %s", variant_name, image_path, e)
+            result = None
+        log_inference_rss(logger, "variant_post_ocr", variant_path, variant_name)
+        if result is None:
             continue
 
         lines = result.get("lines", [])

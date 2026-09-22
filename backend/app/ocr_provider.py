@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Protocol, runtime_checkable
 
-from app.observability import log_rss
+from app.observability import log_inference_rss, log_rss
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,12 @@ class TesseractProvider:
         """Run Tesseract OCR and return normalized token/line results."""
         from app.ocr import run_ocr as _run_ocr
 
-        raw = _run_ocr(image_path)
+        # ponytail: diagnostic RSS/dims lines only — inference call unchanged.
+        log_inference_rss(logger, "tesseract_pre_infer", image_path, variant)
+        try:
+            raw = _run_ocr(image_path)
+        finally:
+            log_inference_rss(logger, "tesseract_post_infer", image_path, variant)
 
         # Normalize tokens into OCRToken objects, then back to dicts
         # with source_provider and preprocessing_variant set.
@@ -213,11 +218,15 @@ class RapidOCRProvider:
         if self._engine is None:
             return {"tokens": [], "lines": []}
 
+        # ponytail: diagnostic RSS/dims lines only — inference call unchanged.
+        log_inference_rss(logger, "rapidocr_pre_infer", image_path, variant)
         try:
             result, _elapse = self._engine(image_path)
         except Exception as e:
             logger.warning("RapidOCR failed for %s: %s", image_path, e)
             return {"tokens": [], "lines": []}
+        finally:
+            log_inference_rss(logger, "rapidocr_post_infer", image_path, variant)
 
         if not result:
             return {"tokens": [], "lines": []}
