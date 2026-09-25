@@ -17,6 +17,8 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/sih26034
       JWT_SECRET: ${JWT_SECRET:-sih26034-dev-secret-change-in-production}
+      # Dockerfile now honours $PORT (7860 default for HF Spaces); pin 8000 for local compose.
+      PORT: 8000
     depends_on:
       - postgres
     volumes:
