@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Protocol, runtime_checkable
 
+from app.config import settings
 from app.observability import log_inference_rss, log_rss
 
 logger = logging.getLogger(__name__)
@@ -268,14 +269,35 @@ class RapidOCRProvider:
 
 
 # ---------------------------------------------------------------------------
-# Provider registry — default chain: RapidOCR primary, Tesseract fallback
+# Provider registry — chain built from settings.ocr_engine_mode
 # ---------------------------------------------------------------------------
 
-_PROVIDER_CHAIN: list[OCRProvider] = [RapidOCRProvider(), TesseractProvider()]
+def _build_provider_chain(mode: str) -> list[OCRProvider]:
+    """Build the provider chain for *mode*.
+
+    "tesseract_only" never constructs RapidOCRProvider, so
+    rapidocr_onnxruntime is never imported and its ONNX model never
+    loads (memory stopgap for constrained hosts).
+    """
+    if mode == "tesseract_only":
+        logger.info(
+            "ocr_engine_mode=tesseract_only: RapidOCR disabled and not constructed"
+        )
+        return [TesseractProvider()]
+    if mode != "auto":
+        logger.warning(
+            "Unknown ocr_engine_mode %r — falling back to 'auto' "
+            "(RapidOCR primary, Tesseract fallback)",
+            mode,
+        )
+    return [RapidOCRProvider(), TesseractProvider()]
+
+
+_PROVIDER_CHAIN: list[OCRProvider] = _build_provider_chain(settings.ocr_engine_mode)
 
 
 def get_provider_chain() -> list[OCRProvider]:
-    """Return the default provider chain (RapidOCR primary, Tesseract fallback)."""
+    """Return the configured provider chain (see settings.ocr_engine_mode)."""
     return _PROVIDER_CHAIN
 
 
