@@ -48,3 +48,36 @@ python scripts/benchmark_ocr.py
 silently relabeling Tesseract output) is fixed: `RapidOCRProvider` returns
 empty results when unavailable, and the chain falls through to Tesseract with
  truthful `source_provider: "tesseract"` tagging.
+
+## Memory-constrained hosts: OCR_ENGINE_MODE=tesseract_only
+
+On Render's free tier (512MB RAM, single worker) RapidOCR's in-process ONNX
+model load + inference blows the memory ceiling:
+
+| Stage | Process RSS (from structured logs) |
+|---|---|
+| `startup_baseline` | ~124MB |
+| `rapidocr_pre_infer` (single 1200x1600 image) | ~210MB+ → OOM-killed |
+
+The kill is not graceful: the worker dies mid-request, the scan request hangs
+forever, and the frontend sits on "Analyzing Declarations..." at a fixed
+percentage because the backend restarted underneath it.
+
+Tesseract avoids this ceiling because it runs as a **subprocess** via
+`pytesseract` — its memory lives in the child process's RSS, not this
+process's, so it never counts against the 512MB ceiling the app server sits
+under.
+
+Set `OCR_ENGINE_MODE=tesseract_only` (see `backend/.env.example`) to build the
+chain as Tesseract-only. RapidOCRProvider is never even constructed, so
+`rapidocr_onnxruntime` is never imported and the model never loads. `"auto"`
+(the default) keeps today's behavior: RapidOCR primary, Tesseract fallback.
+
+**This is a visible, documented accuracy trade-off, not a silent one.**
+Per the accuracy table above, Tesseract is weaker on Hindi/regional text
+(Poor vs Good), curved/warped text (Poor vs Good) and low-contrast text —
+expect more extraction misses on those labels while this flag is on.
+
+**Revert to `OCR_ENGINE_MODE=auto` as soon as the host has more memory**
+(paid Render tier or bigger instance); the flag exists purely as a stopgap,
+not a permanent engine choice.
