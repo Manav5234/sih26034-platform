@@ -147,6 +147,24 @@ docker compose -f docker-compose.yml up --build   # rebuild after every code cha
 **Never** use the production compose without `--build` when actively editing frontend code — the
 container will serve stale code from the last image build.
 
+## Migrations
+
+Alembic migrations now run automatically on container boot: `backend/entrypoint.sh` runs
+`alembic upgrade head` before starting uvicorn, so a merged migration is applied to whatever
+database `DATABASE_URL` points at the next time the backend container starts — no manual step
+in the deploy path.
+
+- **A migration that fails stops the container from starting** (`set -e`): it fails loudly at
+  boot instead of silently serving a stale schema. That means a broken migration has to be
+  caught in review — not discovered by a real request in production.
+- **Adding a column to a live table:** use the two-step pattern already used by the
+  `region_hint` / `scale_estimation` migrations — add a nullable column first, backfill and
+  tighten it in a later migration. Never bundle an additive column with a backfill/default
+  rewrite of existing rows in one migration against a table with live data.
+- The test suite does not exercise this: tests run against SQLite fixtures with a
+  JSONB-to-JSON shim, not real migrations against Postgres. Migration correctness is enforced
+  by boot and by review.
+
 ## Contributing
 
 New to the workflow? See [CONTRIBUTING.md](CONTRIBUTING.md) for the step-by-step: setup, branches,

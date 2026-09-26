@@ -9,6 +9,11 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sih26034"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
 
   backend:
     build: ./backend
@@ -18,7 +23,10 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/sih26034
       JWT_SECRET: ${JWT_SECRET:-sih26034-dev-secret-change-in-production}
     depends_on:
-      - postgres
+      postgres:
+        # entrypoint.sh runs `alembic upgrade head` at boot; wait for postgres
+        # to accept connections first or the backend exits on a fresh volume.
+        condition: service_healthy
     volumes:
       - uploads:/data/uploads
 
